@@ -40,10 +40,7 @@ def realish_eventrouter(mock_websocket, mock_weechat):
     wee_slack.EVENTROUTER = e
     context = e.store_context(SlackRequest('xoxs-token', 'rtm.start', {}))
     with open('_pytest/data/http/rtm.start.json') as rtmstartfile:
-        if sys.version_info.major == 2:
-            rtmstartdata = rtmstartfile.read().decode('utf-8')
-        else:
-            rtmstartdata = rtmstartfile.read()
+        rtmstartdata = rtmstartfile.read()
         e.receive_httprequest_callback(context, '', 0, rtmstartdata, '')
     while len(e.queue):
         e.handle_next()

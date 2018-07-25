@@ -3,12 +3,11 @@
 # Copyright (c) 2015-2019 Trygve Aaberge <trygveaa@gmail.com>
 # Released under the MIT license.
 
-from __future__ import print_function, unicode_literals
-
 from collections import OrderedDict
 from functools import wraps
 from io import StringIO
 from itertools import islice, count
+from json import JSONDecodeError
 
 import errno
 import textwrap
@@ -17,6 +16,7 @@ import json
 import hashlib
 import os
 import re
+import urllib.parse
 import sys
 import traceback
 import collections
@@ -31,22 +31,6 @@ import string
 sys.modules["numpy"] = None
 
 from websocket import ABNF, create_connection, WebSocketConnectionClosedException
-
-try:
-    basestring     # Python 2
-    unicode
-except NameError:  # Python 3
-    basestring = unicode = str
-
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
-
-try:
-    from json import JSONDecodeError
-except:
-    JSONDecodeError = ValueError
 
 # hack to make tests possible.. better way?
 try:
@@ -173,33 +157,11 @@ EMOJI = []
 
 
 def encode_to_utf8(data):
-    if sys.version_info.major > 2:
-        return data
-    elif isinstance(data, unicode):
-        return data.encode('utf-8')
-    if isinstance(data, bytes):
-        return data
-    elif isinstance(data, collections.Mapping):
-        return type(data)(map(encode_to_utf8, data.items()))
-    elif isinstance(data, collections.Iterable):
-        return type(data)(map(encode_to_utf8, data))
-    else:
-        return data
+    return data
 
 
 def decode_from_utf8(data):
-    if sys.version_info.major > 2:
-        return data
-    elif isinstance(data, bytes):
-        return data.decode('utf-8')
-    if isinstance(data, unicode):
-        return data
-    elif isinstance(data, collections.Mapping):
-        return type(data)(map(decode_from_utf8, data.items()))
-    elif isinstance(data, collections.Iterable):
-        return type(data)(map(decode_from_utf8, data))
-    else:
-        return data
+    return data
 
 
 class WeechatWrapper(object):
@@ -602,7 +564,7 @@ class EventRouter(object):
                 meta = j.get("wee_slack_metadata")
                 if meta:
                     try:
-                        if isinstance(meta, basestring):
+                        if isinstance(meta, str):
                             dbg("string of metadata")
                         team = meta.get("team")
                         if team:
@@ -663,7 +625,7 @@ class WeechatController(object):
         complete
         Adds a weechat buffer to the list of handled buffers for this EventRouter
         """
-        if isinstance(buffer_ptr, basestring):
+        if isinstance(buffer_ptr, str):
             self.buffers[buffer_ptr] = channel
         else:
             raise InvalidType(type(buffer_ptr))
@@ -1164,7 +1126,7 @@ class SlackRequest(object):
         post_data["token"] = token
         self.post_data = post_data
         self.params = {'useragent': 'wee_slack {}'.format(SCRIPT_VERSION)}
-        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urlencode(encode_to_utf8(post_data)))
+        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urllib.parse.urlencode(encode_to_utf8(post_data)))
         self.response_id = sha1_hex("{}{}".format(self.url, self.start_time))
         self.retries = kwargs.get('retries', 3)
 #    def __repr__(self):
