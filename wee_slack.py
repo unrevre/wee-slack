@@ -4,7 +4,7 @@
 # Released under the MIT license.
 
 from collections import OrderedDict
-from functools import wraps
+from functools import total_ordering, wraps
 from io import StringIO
 from itertools import islice, count
 from json import JSONDecodeError
@@ -2525,6 +2525,7 @@ class Hdata(object):
         self.lines = w.hdata_get('lines')
 
 
+@total_ordering
 class SlackTS(object):
 
     def __init__(self, ts=None):
@@ -2534,42 +2535,20 @@ class SlackTS(object):
             self.major = int(time.time())
             self.minor = 0
 
-    def __cmp__(self, other):
-        if isinstance(other, SlackTS):
-            if self.major < other.major:
-                return -1
-            elif self.major > other.major:
-                return 1
-            elif self.major == other.major:
-                if self.minor < other.minor:
-                    return -1
-                elif self.minor > other.minor:
-                    return 1
-                else:
-                    return 0
-        else:
-            s = self.__str__()
-            if s < other:
-                return -1
-            elif s > other:
-                return 1
-            elif s == other:
-                return 0
-
     def __lt__(self, other):
-        return self.__cmp__(other) < 0
-
-    def __le__(self, other):
-        return self.__cmp__(other) <= 0
+        if isinstance(other, SlackTS):
+            return (self.major, self.minor) < (other.major, other.minor)
+        return self.__str__() < other
 
     def __eq__(self, other):
-        return self.__cmp__(other) == 0
+        if isinstance(other, SlackTS):
+            return (self.major, self.minor) == (other.major, other.minor)
+        return self.__str__() == other
 
-    def __ge__(self, other):
-        return self.__cmp__(other) >= 0
-
-    def __gt__(self, other):
-        return self.__cmp__(other) > 0
+    def __ne__(self, other):
+        if isinstance(other, SlackTS):
+            return (self.major, self.minor) != (other.major, other.minor)
+        return self.__str__() != other
 
     def __hash__(self):
         return hash("{}.{}".format(self.major, self.minor))
