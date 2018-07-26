@@ -4732,8 +4732,6 @@ class PluginConfig(object):
             w.config_set_desc_plugin(key, desc)
             self.settings[key] = default
 
-        # Migrate settings from old versions of Weeslack...
-        self.migrate()
         # ...and then set anything left over from the defaults.
         for key, default in self.settings.items():
             if not w.config_get_plugin(key):
@@ -4808,25 +4806,6 @@ class PluginConfig(object):
             return w.string_eval_expression(token, {}, {}, {})
         else:
             return token
-
-    def migrate(self):
-        """
-        This is to migrate the extension name from slack_extension to slack
-        """
-        if not w.config_get_plugin("migrated"):
-            for k in self.settings.keys():
-                if not w.config_is_set_plugin(k):
-                    p = w.config_get("plugins.var.python.slack_extension.{}".format(k))
-                    data = w.config_string(p)
-                    if data != "":
-                        w.config_set_plugin(k, data)
-            w.config_set_plugin("migrated", "true")
-
-        old_thread_color_config = w.config_get_plugin("thread_suffix_color")
-        new_thread_color_config = w.config_get_plugin("color_thread_suffix")
-        if old_thread_color_config and not new_thread_color_config:
-            w.config_set_plugin("color_thread_suffix", old_thread_color_config)
-
 
 
 # to Trace execution, add `setup_trace()` to startup
