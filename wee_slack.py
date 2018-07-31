@@ -3,27 +3,29 @@
 # Copyright (c) 2015-2019 Trygve Aaberge <trygveaa@gmail.com>
 # Released under the MIT license.
 
+import abc
+import collections
+import errno
+import hashlib
+import itertools
+import json
+import os
+import random
+import re
+import socket
+import ssl
+import string
+import sys
+import textwrap
+import time
+import traceback
+import urllib.parse
+
 from collections import OrderedDict
 from functools import total_ordering, wraps
 from io import StringIO
-from itertools import islice, count
 from json import JSONDecodeError
-
-import errno
-import textwrap
-import time
-import json
-import hashlib
-import os
-import re
-import urllib.parse
-import sys
-import traceback
-import collections
-import ssl
-import random
-import socket
-import string
+from websocket import ABNF, create_connection, WebSocketConnectionClosedException
 
 # Prevent websocket from using numpy (it's an optional dependency). We do this
 # because numpy causes python (and thus weechat) to crash when it's reloaded.
@@ -164,7 +166,7 @@ def decode_from_utf8(data):
     return data
 
 
-class WeechatWrapper(object):
+class WeechatWrapper():
     def __init__(self, wrapped_class):
         self.wrapped_class = wrapped_class
 
@@ -184,8 +186,7 @@ class WeechatWrapper(object):
         orig_attr = self.wrapped_class.__getattribute__(attr)
         if callable(orig_attr):
             return self.wrap_for_utf8(orig_attr)
-        else:
-            return decode_from_utf8(orig_attr)
+        return decode_from_utf8(orig_attr)
 
     # Ensure all lines sent to weechat specifies a prefix. For lines after the
     # first, we want to disable the prefix, which is done by specifying a space.
@@ -194,7 +195,7 @@ class WeechatWrapper(object):
         return self.wrap_for_utf8(self.wrapped_class.prnt_date_tags)(buffer, date, tags, message)
 
 
-class ProxyWrapper(object):
+class ProxyWrapper():
     def __init__(self):
         self.proxy_name = w.config_string(w.config_get('weechat.network.proxy_curl'))
         self.proxy_string = ""
@@ -247,8 +248,7 @@ def format_exc_only():
 
 
 def get_nick_color_name(nick):
-    info_name_prefix = "irc_" if int(weechat_version) < 0x1050000 else ""
-    return w.info_get(info_name_prefix + "nick_color_name", nick)
+    return w.info_get("nick_color_name", nick)
 
 def sha1_hex(s):
     return hashlib.sha1(s.encode('utf-8')).hexdigest()
@@ -273,7 +273,8 @@ def handle_socket_error(exception, team, caller_name):
 
 ###### New central Event router
 
-class EventRouter(object):
+
+class EventRouter():
 
     def __init__(self):
         """
@@ -354,6 +355,7 @@ class EventRouter(object):
         if data:
             # dbg("retrieved context {} ".format(identifier))
             return data
+        return None
 
     def delete_context(self, identifier):
         """
@@ -419,7 +421,7 @@ class EventRouter(object):
             if opcode == ABNF.OPCODE_PONG:
                 team.last_pong_time = time.time()
                 return w.WEECHAT_RC_OK
-            elif opcode != ABNF.OPCODE_TEXT:
+            if opcode != ABNF.OPCODE_TEXT:
                 return w.WEECHAT_RC_OK
 
             message_json = json.loads(data.decode('utf-8'))
@@ -447,7 +449,7 @@ class EventRouter(object):
             dbg(request_metadata)
             return
         if return_code == 0:
-            if len(out) > 0:
+            if out:
                 if request_metadata.response_id not in self.reply_buffer:
                     self.reply_buffer[request_metadata.response_id] = StringIO()
                 self.reply_buffer[request_metadata.response_id].write(out)
@@ -466,7 +468,6 @@ class EventRouter(object):
                     self.delete_context(data)
                 except:
                     dbg("HTTP REQUEST CALLBACK FAILED", True)
-                    pass
             # We got an empty reply and this is weird so just ditch it and retry
             else:
                 dbg("length was zero, probably a bug..")
@@ -517,7 +518,7 @@ class EventRouter(object):
         useful metadata and context to events as they are processed.
         """
         wanted_interval = 100
-        if len(self.slow_queue) > 0 or len(self.queue) > 0:
+        if self.slow_queue or self.queue:
             wanted_interval = 10
         if self.handle_next_hook is None or wanted_interval != self.handle_next_hook_interval:
             if self.handle_next_hook:
@@ -525,14 +526,13 @@ class EventRouter(object):
             self.handle_next_hook = w.hook_timer(wanted_interval, 0, 0, "handle_next", "")
             self.handle_next_hook_interval = wanted_interval
 
-
-        if len(self.slow_queue) > 0 and ((self.slow_queue_timer + 1) < time.time()):
+        if self.slow_queue and ((self.slow_queue_timer + 1) < time.time()):
             # for q in self.slow_queue[0]:
             dbg("from slow queue", 0)
             self.queue.append(self.slow_queue.pop())
             # self.slow_queue = []
             self.slow_queue_timer = time.time()
-        if len(self.queue) > 0:
+        if self.queue:
             j = self.queue.pop(0)
             # Reply is a special case of a json reply from websocket.
             kwargs = {}
@@ -605,7 +605,7 @@ def handle_next(*args):
     return w.WEECHAT_RC_OK
 
 
-class WeechatController(object):
+class WeechatController():
     """
     Encapsulates our interaction with weechat
     """
@@ -748,14 +748,13 @@ def buffer_input_callback(signal, buffer_ptr, data):
     def get_id(message_id):
         if not message_id:
             return 1
-        elif message_id[0] == "$":
+        if message_id[0] == "$":
             return message_id[1:]
-        else:
-            return int(message_id)
+        return int(message_id)
 
     message_id_regex = r"(\d*|\$[0-9a-fA-F]{3,})"
     reaction = re.match(r"^{}(\+|-):(.*):\s*$".format(message_id_regex), data)
-    substitute = re.match("^{}s/".format(message_id_regex), data)
+    substitute = re.match(r"^{}s/".format(message_id_regex), data)
     if reaction:
         if reaction.group(2) == "+":
             channel.send_add_reaction(get_id(reaction.group(1)), reaction.group(3))
@@ -784,14 +783,14 @@ def buffer_input_callback(signal, buffer_ptr, data):
 # Workaround for supporting multiline messages. It intercepts before the input
 # callback is called, as this is called with the whole message, while it is
 # normally split on newline before being sent to buffer_input_callback
-def input_text_for_buffer_cb(data, modifier, current_buffer, string):
+def input_text_for_buffer_cb(data, modifier, current_buffer, text):
     if current_buffer not in EVENTROUTER.weechat_controller.buffers:
-        return string
-    message = decode_from_utf8(string)
+        return text
+    message = decode_from_utf8(text)
     if not message.startswith("/") and "\n" in message:
         buffer_input_callback("EVENTROUTER", current_buffer, message)
         return ""
-    return string
+    return text
 
 
 @utf8_decode
@@ -906,7 +905,6 @@ def typing_bar_item_cb(data, item, current_window, current_buffer, extra_info):
             if channel.type == "im":
                 if channel.is_someone_typing():
                     typers.append("D/" + channel.slack_name)
-                pass
 
     typing = ", ".join(typers)
     if typing != "":
@@ -1105,7 +1103,7 @@ def stop_talking_to_slack():
 ##### New Classes
 
 
-class SlackRequest(object):
+class SlackRequest():
     """
     complete
     Encapsulates a Slack api request. Valuable as an object that we can add to the queue and/or retry.
@@ -1146,7 +1144,7 @@ class SlackRequest(object):
         return (self.start_time + (self.tries**2)) < time.time()
 
 
-class SlackSubteam(object):
+class SlackSubteam():
    """
    Represents a slack group or subteam
    """
@@ -1166,7 +1164,7 @@ class SlackSubteam(object):
        return compare_str == self.subteam_id
 
 
-class SlackTeam(object):
+class SlackTeam():
     """
     incomplete
     Team object under which users and channels live.. Does lots.
@@ -1223,7 +1221,7 @@ class SlackTeam(object):
         return "domain={} nick={}".format(self.subdomain, self.nick)
 
     def __eq__(self, compare_str):
-         return compare_str == self.token or compare_str == self.domain or compare_str == self.subdomain
+         return compare_str in (self.token, self.domain, self.subdomain)
 
     @property
     def members(self):
@@ -1296,6 +1294,7 @@ class SlackTeam(object):
             if channel.get_members() == members and (
                     channel_type is None or channel.type == channel_type):
                 return channel
+        return None
 
     def get_channel_map(self):
         return {v.name: k for k, v in self.channels.items()}
@@ -1321,10 +1320,7 @@ class SlackTeam(object):
 
     def is_user_present(self, user_id):
         user = self.users.get(user_id)
-        if user and user.presence == 'active':
-            return True
-        else:
-            return False
+        return user and user.presence == 'active'
 
     def mark_read(self, ts=None, update_remote=True, force=False):
         pass
@@ -1404,14 +1400,14 @@ class SlackTeam(object):
         # json we can send.
         # We should try to be smarter to fetch the users whom we want to
         # subscribe to.
-        users = list(self.users.keys())[0:750]
+        users = list(self.users)[0:750]
         self.send_to_websocket({
             "type": "presence_sub",
             "ids": users,
         }, expect_reply=False)
 
 
-class SlackChannelCommon(object):
+class SlackChannelCommon():
     def send_add_reaction(self, msg_id, reaction):
         self.send_change_reaction("reactions.add", msg_id, reaction)
 
@@ -1419,14 +1415,14 @@ class SlackChannelCommon(object):
         self.send_change_reaction("reactions.remove", msg_id, reaction)
 
     def send_change_reaction(self, method, msg_id, reaction):
-        if type(msg_id) is not int:
+        if not isinstance(msg_id, int):
             if msg_id in self.hashed_messages:
                 timestamp = str(self.hashed_messages[msg_id].ts)
             else:
                 return
         elif 0 < msg_id <= len(self.messages):
             keys = self.main_message_keys_reversed()
-            timestamp = next(islice(keys, msg_id - 1, None))
+            timestamp = next(itertools.islice(keys, msg_id - 1, None))
         else:
             return
         data = {"channel": self.identifier, "timestamp": timestamp, "name": reaction}
@@ -1452,7 +1448,7 @@ class SlackChannelCommon(object):
                 self.eventrouter.receive(s)
 
     def my_last_message(self, msg_id):
-        if type(msg_id) is not int:
+        if not isinstance(msg_id, int):
             m = self.hashed_messages.get(msg_id)
             if m is not None and m.message_json.get("user") == self.team.myidentifier:
                 return m.message_json
@@ -1464,6 +1460,8 @@ class SlackChannelCommon(object):
                     if msg_id == 0:
                         return m.message_json
 
+        return None
+
     def change_message(self, ts, message_json=None, text=None):
         ts = SlackTS(ts)
         m = self.messages.get(ts)
@@ -1474,10 +1472,10 @@ class SlackChannelCommon(object):
         if text:
             m.change_text(text)
 
-        if type(m) == SlackMessage or config.thread_messages_in_channel:
+        if isinstance(m, SlackMessage) or config.thread_messages_in_channel:
             new_text = self.render(m, force=True)
             modify_buffer_line(self.channel_buffer, ts, new_text)
-        if type(m) == SlackThreadMessage:
+        if isinstance(m, SlackThreadMessage):
             thread_channel = m.parent_message.thread_channel
             if thread_channel and thread_channel.active:
                 new_text = thread_channel.render(m, force=True)
@@ -1510,8 +1508,11 @@ class SlackChannelCommon(object):
             self.hashed_messages[shorthash] = message
             message.hash = shorthash
             return shorthash
-        elif ts in self.messages:
+
+        if ts in self.messages:
             return self.messages[ts].hash
+
+        return None
 
 
 
@@ -1548,10 +1549,8 @@ class SlackChannel(SlackChannelCommon):
         self.last_line_from = None
 
     def __eq__(self, compare_str):
-        if compare_str == self.slack_name or compare_str == self.formatted_name() or compare_str == self.formatted_name(style="long_default"):
-            return True
-        else:
-            return False
+        return compare_str in (self.slack_name, self.formatted_name(),
+                               self.formatted_name(style="long_default"))
 
     def __repr__(self):
         return "Name:{} Identifier:{}".format(self.name, self.identifier)
@@ -1664,8 +1663,7 @@ class SlackChannel(SlackChannelCommon):
         highlights = nick_highlights | subteam_highlights | self.team.highlight_words
         if self.muted and config.muted_channels_activity == "personal_highlights":
             return highlights
-        else:
-            return highlights | {"@channel", "@everyone", "@group", "@here"}
+        return highlights | {"@channel", "@everyone", "@group", "@here"}
 
     def set_highlights(self):
         # highlight my own name and any set highlights
@@ -1818,7 +1816,7 @@ class SlackChannel(SlackChannelCommon):
 
     def main_message_keys_reversed(self):
         return (key for key in reversed(self.messages)
-                if type(self.messages[key]) == SlackMessage)
+                if isinstance(self.messages[key], SlackMessage))
 
     # Typing related
     def set_typing(self, user):
@@ -1841,7 +1839,7 @@ class SlackChannel(SlackChannelCommon):
         for user, timestamp in self.typing.items():
             if timestamp + 4 > time.time():
                 return True
-        if len(self.typing) > 0:
+        if self.typing:
             self.typing = {}
             self.eventrouter.weechat_controller.set_refresh_buffer_list(True)
         return False
@@ -1924,8 +1922,8 @@ class SlackChannel(SlackChannelCommon):
         else:
             if len(self.members) < 1000:
                 try:
-                    for user in self.members:
-                        user = self.team.users.get(user)
+                    for member in self.members:
+                        user = self.team.users.get(member)
                         if user.deleted:
                             continue
                         nick_group = afk
@@ -2291,7 +2289,7 @@ class SlackThreadChannel(SlackChannelCommon):
         return message.render(force)
 
 
-class SlackUser(object):
+class SlackUser():
     """
     Represends an individual slack user. Also where you set their name formatting.
     """
@@ -2332,8 +2330,7 @@ class SlackUser(object):
     def formatted_name(self, prepend="", enable_color=True):
         if enable_color:
             return self.color + prepend + self.name + w.color("reset")
-        else:
-            return prepend + self.name
+        return prepend + self.name
 
 
 class SlackBot(SlackUser):
@@ -2345,7 +2342,7 @@ class SlackBot(SlackUser):
         super(SlackBot, self).__init__(originating_team_id, is_bot=True, **kwargs)
 
 
-class SlackMessage(object):
+class SlackMessage():
     """
     Represents a single slack message and associated context/metadata.
     These are modifiable and can be rerendered to change a message,
@@ -2505,7 +2502,7 @@ class SlackThreadMessage(SlackMessage):
         self.parent_message = parent_message
 
 
-class WeeSlackMetadata(object):
+class WeeSlackMetadata():
     """
     A simple container that we pickle/unpickle to hold data.
     """
@@ -2517,16 +2514,16 @@ class WeeSlackMetadata(object):
         return self.meta
 
 
-class Hdata(object):
-    def __init__(self, w):
-        self.buffer = w.hdata_get('buffer')
-        self.line = w.hdata_get('line')
-        self.line_data = w.hdata_get('line_data')
-        self.lines = w.hdata_get('lines')
+class Hdata():
+    def __init__(self, wc):
+        self.buffer = wc.hdata_get('buffer')
+        self.line = wc.hdata_get('line')
+        self.line_data = wc.hdata_get('line_data')
+        self.lines = wc.hdata_get('lines')
 
 
 @total_ordering
-class SlackTS(object):
+class SlackTS():
 
     def __init__(self, ts=None):
         if ts:
@@ -2773,35 +2770,36 @@ def handle_usergroupsuserslist(users_json, eventrouter, **kwargs):
     return print_users_info(team, header, users)
 
 
-def handle_usersprofileset(json, eventrouter, **kwargs):
-    if not json['ok']:
-        w.prnt('', 'ERROR: Failed to set profile: {}'.format(json['error']))
+def handle_usersprofileset(message_json, eventrouter, **kwargs):
+    if not message_json['ok']:
+        w.prnt('', 'ERROR: Failed to set profile: {}'.format(message_json['error']))
 
 
-def handle_conversationsinvite(json, eventrouter, **kwargs):
-    request_metadata = json['wee_slack_request_metadata']
+def handle_conversationsinvite(message_json, eventrouter, **kwargs):
+    request_metadata = message_json['wee_slack_request_metadata']
     team = eventrouter.teams[request_metadata.team_hash]
     nicks = ', '.join(request_metadata.nicks)
-    if json['ok']:
-        channel = team.channels.get(json['channel']['id'], request_metadata.channel)
+    if message_json['ok']:
+        channel = team.channels.get(message_json['channel']['id'],
+                                    request_metadata.channel)
         w.prnt(team.channel_buffer, 'Invited {} to {}'.format(nicks, channel.name))
     else:
         w.prnt(team.channel_buffer, 'ERROR: Couldn\'t invite {} to {}. Error: {}'
-                .format(nicks, request_metadata.channel.name, json['error']))
+                .format(nicks, request_metadata.channel.name, message_json['error']))
 
 
-def handle_chatcommand(json, eventrouter, **kwargs):
-    request_metadata = json['wee_slack_request_metadata']
+def handle_chatcommand(message_json, eventrouter, **kwargs):
+    request_metadata = message_json['wee_slack_request_metadata']
     team = eventrouter.teams[request_metadata.team_hash]
     command = '{} {}'.format(request_metadata.command, request_metadata.command_args).rstrip()
-    response = unfurl_refs(json['response']) if 'response' in json else ''
-    if json['ok']:
+    response = unfurl_refs(message_json['response']) if 'response' in message_json else ''
+    if message_json['ok']:
         response_text = 'Response: {}'.format(response) if response else 'No response'
         w.prnt(team.channel_buffer, 'Ran command "{}". {}' .format(command, response_text))
     else:
         response_text = '. Response: {}'.format(response) if response else ''
         w.prnt(team.channel_buffer, 'ERROR: Couldn\'t run command "{}". Error: {}{}'
-                .format(command, json['error'], response_text))
+                .format(command, message_json['error'], response_text))
 
 
 ###### New/converted process_ and subprocess_ methods
@@ -2928,7 +2926,7 @@ def download_files(message_json, **kwargs):
     def fileout_iter(path):
         yield path
         main, ext = os.path.splitext(path)
-        for i in count(start=1):
+        for i in itertools.count(start=1):
             yield main + "-{}".format(i) + ext
 
     for f in message_json.get('files', []):
@@ -3239,9 +3237,9 @@ def linkify_text(message, team, only_users=False):
         if prefix == "@":
             if name in ["channel", "everyone", "group", "here"]:
                 return "<!{}>".format(name)
-            elif name in usernames:
+            if name in usernames:
                 return "<@{}>".format(usernames[name])
-            elif word in usergroups.keys():
+            if word in usergroups.keys():
                 return "<!subteam^{}|{}>".format(usergroups[word], word)
         elif prefix == "#" and not only_users:
             if word in channels:
@@ -3271,17 +3269,17 @@ def unfurl_refs(text, ignore_alt_text=None, auto_link_display=None):
 
     def unfurl_ref(match):
         ref = match.group(1)
-        id = ref.split('|')[0]
+        refid = ref.split('|')[0]
         display_text = ref
         if ref.find('|') > -1:
             if ignore_alt_text:
-                display_text = resolve_ref(id)
+                display_text = resolve_ref(refid)
             else:
-                if id.startswith("#"):
+                if refid.startswith("#"):
                     display_text = "#{}".format(ref.split('|')[1])
-                elif id.startswith("@"):
+                elif refid.startswith("@"):
                     display_text = ref.split('|')[1]
-                elif id.startswith("!subteam"):
+                elif refid.startswith("!subteam"):
                     if ref.split('|')[1].startswith('@'):
                         handle = ref.split('|')[1][1:]
                     else:
@@ -3388,7 +3386,8 @@ def resolve_ref(ref):
     for team in EVENTROUTER.teams.values():
         if ref in ['!channel', '!everyone', '!group', '!here']:
             return ref.replace('!', '@')
-        elif ref.startswith('@'):
+
+        if ref.startswith('@'):
             user = team.users.get(ref[1:])
             if user:
                 suffix = config.external_user_suffix if user.is_external else ''
@@ -3413,8 +3412,7 @@ def create_user_status_string(profile):
     status_text = profile.get("status_text")
     if status_emoji or status_text:
         return "{} | {} {}".format(real_name, status_emoji, status_text)
-    else:
-        return real_name
+    return real_name
 
 
 def create_reaction_string(reactions):
@@ -3426,7 +3424,7 @@ def create_reaction_string(reactions):
     else:
         reaction_string = ' {}['.format(w.color(config.color_reaction_suffix))
         for r in reactions:
-            if len(r["users"]) > 0:
+            if r["users"]:
                 count += 1
                 if config.show_reaction_nicks:
                     nicks = [resolve_ref("@{}".format(user)) for user in r["users"]]
@@ -3742,7 +3740,7 @@ def register_callback(data, command, return_code, out, err):
         w.prnt("", "Check the network or proxy settings")
         return w.WEECHAT_RC_OK_EAT
 
-    if len(out) <= 0:
+    if not out:
         w.prnt("", "ERROR: problem when trying to get Slack OAuth token. Got 0 length answer. Err: {}".format(err))
         w.prnt("", "Check the network or proxy settings")
         return w.WEECHAT_RC_OK_EAT
@@ -3828,10 +3826,10 @@ def command_channels(data, current_buffer, args):
     def extra_info_function(channel):
         if channel.active:
             return "member"
-        elif getattr(channel, "is_archived", None):
+        if getattr(channel, "is_archived", None):
             return "archived"
-        else:
-            return "not a member"
+        return "not a member"
+
     return print_team_items_info(team, "Channels", channels, extra_info_function)
 
 
@@ -3980,7 +3978,7 @@ def command_thread(data, current_buffer, args):
             return w.WEECHAT_RC_OK_EAT
     else:
         for message in reversed(channel.messages.values()):
-            if type(message) == SlackMessage and message.number_of_replies():
+            if isinstance(message, SlackMessage) and message.number_of_replies():
                 msg = message
                 break
         else:
@@ -4012,7 +4010,7 @@ def command_reply(data, current_buffer, args):
         parent_id = str(msg.ts)
     elif msg_id.isdigit() and int(msg_id) >= 1:
         mkeys = channel.main_message_keys_reversed()
-        parent_id = str(next(islice(mkeys, int(msg_id) - 1, None)))
+        parent_id = str(next(itertools.islice(mkeys, int(msg_id) - 1, None)))
     else:
         w.prnt('', 'ERROR: Invalid id given, must be a number greater than 0 or an existing id')
         return w.WEECHAT_RC_OK_EAT
@@ -4401,8 +4399,7 @@ class InvalidType(Exception):
     Raised when we do type checking to ensure objects of the wrong
     type are not used improperly.
     """
-    def __init__(self, type_str):
-        super(InvalidType, self).__init__(type_str)
+    pass
 
 ###### New but probably old and need to migrate
 
@@ -4545,7 +4542,7 @@ def dbg(message, level=0, main_buffer=False, fout=False):
 
 
 ###### Config code
-class PluginConfig(object):
+class PluginConfig():
     Setting = collections.namedtuple('Setting', ['default', 'desc'])
     # Default settings.
     # These are, initially, each a (default, desc) tuple; the former is the
@@ -4721,8 +4718,8 @@ class PluginConfig(object):
         return "".join([x + "\t" + str(self.settings[x]) + "\n" for x in self.settings.keys()])
 
     def config_changed(self, data, key, value):
-        for key in self.settings:
-            self.settings[key] = self.fetch_setting(key)
+        for opt in self.settings:
+            self.settings[opt] = self.fetch_setting(opt)
         if self.debug_mode:
             create_slack_debug_buffer()
         return w.WEECHAT_RC_OK
@@ -4783,20 +4780,19 @@ class PluginConfig(object):
         token = w.config_get_plugin("slack_api_token")
         if token.startswith('${sec.data'):
             return w.string_eval_expression(token, {}, {}, {})
-        else:
-            return token
+        return token
 
 
-# to Trace execution, add `setup_trace()` to startup
-# and  to a function and sys.settrace(trace_calls)  to a function
+# to trace execution, add `setup_trace()` to startup
+# and `sys.settrace(trace_calls)` to a function
 def setup_trace():
-    global f
+    global ftr
     now = time.time()
-    f = open('{}/{}-trace.json'.format(RECORD_DIR, now), 'w')
+    ftr = open('{}/{}-trace.json'.format(RECORD_DIR, now), 'w')
 
 
 def trace_calls(frame, event, arg):
-    global f
+    global ftr
     if event != 'call':
         return
     co = frame.f_code
@@ -4809,15 +4805,15 @@ def trace_calls(frame, event, arg):
     caller = frame.f_back
     caller_line_no = caller.f_lineno
     caller_filename = caller.f_code.co_filename
-    print('Call to %s on line %s of %s from line %s of %s' % \
-        (func_name, func_line_no, func_filename,
-         caller_line_no, caller_filename), file=f)
-    f.flush()
+    print('Call to {} on line {} of {} from line {} of {}'.format(
+        func_name, func_line_no, func_filename,
+        caller_line_no, caller_filename), file=ftr)
+    ftr.flush()
     return
 
 
-def initiate_connection(token, retries=3, team_hash=None):
-    return SlackRequest(token,
+def initiate_connection(t, retries=3, team_hash=None):
+    return SlackRequest(t,
                         'rtm.{}'.format('connect' if team_hash else 'start'),
                         {"batch_presence_aware": 1},
                         retries=retries,
@@ -4830,50 +4826,36 @@ if __name__ == "__main__":
 
     if w.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
                   SCRIPT_DESC, "script_unloaded", ""):
+        global EVENTROUTER
+        EVENTROUTER = EventRouter()
+        # setup_trace()
 
-        weechat_version = w.info_get("version_number", "") or 0
-        if int(weechat_version) < 0x1030000:
-            w.prnt("", "\nERROR: Weechat version 1.3+ is required to use {}.\n\n".format(SCRIPT_NAME))
-        else:
+        # global variables
+        slack_debug = None
+        config = PluginConfig()
+        config_changed_cb = config.config_changed
 
-            global EVENTROUTER
-            EVENTROUTER = EventRouter()
-            # setup_trace()
+        typing_timer = time.time()
 
-            # WEECHAT_HOME = w.info_get("weechat_dir", "")
+        hide_distractions = False
 
-            # Global var section
-            slack_debug = None
-            config = PluginConfig()
-            config_changed_cb = config.config_changed
+        w.hook_config("plugins.var.python." + SCRIPT_NAME + ".*",
+                      "config_changed_cb", "")
+        w.hook_modifier("input_text_for_buffer", "input_text_for_buffer_cb", "")
 
-            typing_timer = time.time()
-            # domain = None
-            # previous_buffer = None
-            # slack_buffer = None
+        EMOJI.extend(load_emoji())
+        setup_hooks()
 
-            # never_away = False
-            hide_distractions = False
-            # hotlist = w.infolist_get("hotlist", "", "")
-            # main_weechat_buffer = w.info_get("irc_buffer", "{}.{}".format(domain, "DOESNOTEXIST!@#$"))
+        # attach to the weechat hooks we need
+        tokens = [t.strip() for t in config.slack_api_token.split(',')]
+        w.prnt('', 'Connecting to {} slack team{}.'.format(
+            len(tokens), '' if len(tokens) == 1 else 's'))
+        for tn in tokens:
+            sr = initiate_connection(tn)
+            EVENTROUTER.receive(sr)
+        if config.record_events:
+            EVENTROUTER.record()
+        EVENTROUTER.handle_next()
+        # END attach to the weechat hooks we need
 
-            w.hook_config("plugins.var.python." + SCRIPT_NAME + ".*", "config_changed_cb", "")
-            w.hook_modifier("input_text_for_buffer", "input_text_for_buffer_cb", "")
-
-            EMOJI.extend(load_emoji())
-            setup_hooks()
-
-            # attach to the weechat hooks we need
-
-            tokens = [token.strip() for token in config.slack_api_token.split(',')]
-            w.prnt('', 'Connecting to {} slack team{}.'
-                    .format(len(tokens), '' if len(tokens) == 1 else 's'))
-            for t in tokens:
-                s = initiate_connection(t)
-                EVENTROUTER.receive(s)
-            if config.record_events:
-                EVENTROUTER.record()
-            EVENTROUTER.handle_next()
-            # END attach to the weechat hooks we need
-
-            hdata = Hdata(w)
+        hdata = Hdata(w)
