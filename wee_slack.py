@@ -103,7 +103,7 @@ SLACK_API_TRANSLATOR = {
 
 }
 
-###### Decorators have to be up here
+### ~*~ DECORATORS ~*~
 
 
 def slack_buffer_or_ignore(f):
@@ -142,6 +142,8 @@ def utf8_decode(f):
         return f(*decode_from_utf8(args), **decode_from_utf8(kwargs))
     return wrapper
 
+### ~*~ DECORATORS END
+
 
 NICK_GROUP_HERE = "0|Here"
 NICK_GROUP_AWAY = "1|Away"
@@ -155,7 +157,7 @@ if hasattr(ssl, "get_default_verify_paths") and callable(ssl.get_default_verify_
 
 EMOJI = []
 
-###### Unicode handling
+### ~*~ UNICODE ~*~
 
 
 def encode_to_utf8(data):
@@ -164,6 +166,8 @@ def encode_to_utf8(data):
 
 def decode_from_utf8(data):
     return data
+
+### ~*~ UNICODE END
 
 
 class WeechatWrapper():
@@ -234,8 +238,8 @@ class ProxyWrapper():
 
         return "-x{}{}{}".format(user, self.proxy_address, port)
 
+### ~*~ HELPERS ~*~
 
-##### Helpers
 
 
 def format_exc_tb():
@@ -257,6 +261,8 @@ def get_functions_with_prefix(prefix):
     return {name[len(prefix):]: ref for name, ref in globals().items()
             if name.startswith(prefix)}
 
+### ~*~ HELPERS END
+
 
 def handle_socket_error(exception, team, caller_name):
     if not (isinstance(exception, WebSocketConnectionClosedException) or
@@ -270,8 +276,7 @@ def handle_socket_error(exception, team, caller_name):
         caller_name, format_exc_tb()), level=5)
     team.set_disconnected()
 
-
-###### New central Event router
+### ~*~ EVENT ROUTER ~*~
 
 
 class EventRouter():
@@ -604,6 +609,8 @@ def handle_next(*args):
             pass
     return w.WEECHAT_RC_OK
 
+### ~*~ EVENT ROUTER END
+
 
 class WeechatController():
     """
@@ -660,9 +667,6 @@ class WeechatController():
     def set_refresh_buffer_list(self, setting):
         self.buffer_list_stale = setting
 
-###### New Local Processors
-
-
 def local_process_async_slack_api_request(request, event_router):
     """
     complete
@@ -679,7 +683,7 @@ def local_process_async_slack_api_request(request, event_router):
         w.hook_process_hashtable('url:', params, config.slack_timeout, "", context)
         w.hook_process_hashtable(weechat_request, params, config.slack_timeout, "receive_httprequest_callback", context)
 
-###### New Callbacks
+### ~*~ CALLBACKS ~*~
 
 
 @utf8_decode
@@ -1082,6 +1086,8 @@ def complete_next_cb(data, current_buffer, command):
             return w.WEECHAT_RC_OK_EAT
     return w.WEECHAT_RC_OK
 
+### ~*~ CALLBACKS END
+
 
 def script_unloaded():
     stop_talking_to_slack()
@@ -1100,7 +1106,7 @@ def stop_talking_to_slack():
         team.ws.shutdown()
     return w.WEECHAT_RC_OK
 
-##### New Classes
+### ~*~ CLASSES ~*~
 
 
 class SlackRequest():
@@ -2562,7 +2568,9 @@ class SlackTS():
     def minorstr(self):
         return str(self.minor)
 
-###### New handlers
+### ~*~ CLASSES END
+
+### ~*~ HANDLERS ~*~
 
 
 def handle_rtmstart(login_data, eventrouter):
@@ -2801,8 +2809,11 @@ def handle_chatcommand(message_json, eventrouter, **kwargs):
         w.prnt(team.channel_buffer, 'ERROR: Couldn\'t run command "{}". Error: {}{}'
                 .format(command, message_json['error'], response_text))
 
+### ~*~ HANDLERS END
 
-###### New/converted process_ and subprocess_ methods
+### ~*~ (SUB-)PROCESS METHODS ~*~
+
+
 def process_hello(message_json, eventrouter, **kwargs):
     kwargs['team'].subscribe_users_presence()
 
@@ -3197,8 +3208,9 @@ def process_emoji_changed(message_json, eventrouter, **kwargs):
     team = kwargs['team']
     team.load_emoji_completions()
 
+### ~*~ (SUB-)PROCESS METHODS END
 
-###### New module/global methods
+
 def render_formatting(text):
     text = re.sub(r'(^| )\*([^*\n`]+)\*(?=[^\w]|$)',
                   r'\1{}*\2*{}'.format(w.color(config.render_bold_as),
@@ -3545,7 +3557,7 @@ def tag(tagset=None, user=None, self_msg=False, backlog=False, no_log=False, ext
         tags |= set(extra_tags)
     return ",".join(tags)
 
-###### New/converted command_ commands
+### ~*~ COMMANDS ~*~
 
 
 @slack_buffer_or_ignore
@@ -4390,8 +4402,9 @@ def set_unread_current_buffer_cb(data, current_buffer, command):
     channel.mark_read()
     return w.WEECHAT_RC_OK
 
+### ~*~ COMMANDS END
 
-###### NEW EXCEPTIONS
+### ~*~ EXCEPTIONS ~*~
 
 
 class InvalidType(Exception):
@@ -4401,7 +4414,7 @@ class InvalidType(Exception):
     """
     pass
 
-###### New but probably old and need to migrate
+### ~*~ EXCEPTIONS END
 
 
 def closed_slack_debug_buffer_cb(data, buffer):
@@ -4517,9 +4530,6 @@ def setup_hooks():
     # w.hook_signal('window_scrolled', "scrolled_cb", "")
     # w.hook_timer(3000, 0, 0, "slack_connection_persistence_cb", "")
 
-##### END NEW
-
-
 def dbg(message, level=0, main_buffer=False, fout=False):
     """
     send debug output to the slack-debug buffer and optionally write to a file.
@@ -4540,8 +4550,9 @@ def dbg(message, level=0, main_buffer=False, fout=False):
                 # w.prnt(slack_debug, "---------")
                 w.prnt(slack_debug, message)
 
+### ~*~ CONFIG ~*~
 
-###### Config code
+
 class PluginConfig():
     Setting = collections.namedtuple('Setting', ['default', 'desc'])
     # Default settings.
@@ -4782,6 +4793,10 @@ class PluginConfig():
             return w.string_eval_expression(token, {}, {}, {})
         return token
 
+### ~*~ CONFIG END
+
+### ~*~ TRACE ~*~
+
 
 # to trace execution, add `setup_trace()` to startup
 # and `sys.settrace(trace_calls)` to a function
@@ -4810,6 +4825,8 @@ def trace_calls(frame, event, arg):
         caller_line_no, caller_filename), file=ftr)
     ftr.flush()
     return
+
+### ~*~ TRACE END
 
 
 def initiate_connection(t, retries=3, team_hash=None):
