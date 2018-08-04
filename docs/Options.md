@@ -100,6 +100,12 @@ slack` after changing it to take effect.
 
 **Description:** The prefix of buffer names for groups (private channels).
 
+### hide_distractions
+
+**Default:** `false`
+
+**Description:** Hide distracting channels.
+
 ### map_underline_to
 
 **Default:** `_`

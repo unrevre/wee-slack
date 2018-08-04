@@ -4186,12 +4186,12 @@ def command_nodistractions(data, current_buffer, args):
     /slack nodistractions
     Hide or unhide all channels marked as distracting.
     """
-    global hide_distractions
-    hide_distractions = not hide_distractions
+    config.hide_distractions = not config.hide_distractions
     channels = [channel for channel in EVENTROUTER.weechat_controller.buffers.values()
             if channel in config.distracting_channels]
     for channel in channels:
-        w.buffer_set(channel.channel_buffer, "hidden", str(int(hide_distractions)))
+        w.buffer_set(channel.channel_buffer, "hidden",
+                     str(int(config.hide_distractions)))
     return w.WEECHAT_RC_OK_EAT
 
 
@@ -4608,6 +4608,9 @@ class PluginConfig():
         'group_name_prefix': Setting(
             default='&',
             desc='The prefix of buffer names for groups (private channels).'),
+        'hide_distractions': Setting(
+            default='false',
+            desc='Hide distracting channels.'),
         'map_underline_to': Setting(
             default='_',
             desc='When sending underlined text to slack, use this formatting'
@@ -4845,8 +4848,6 @@ if __name__ == "__main__":
         config_changed_cb = config.config_changed
 
         typing_timer = time.time()
-
-        hide_distractions = False
 
         w.hook_config("plugins.var.python." + SCRIPT_NAME + ".*",
                       "config_changed_cb", "")
