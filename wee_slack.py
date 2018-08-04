@@ -226,15 +226,9 @@ class ProxyWrapper():
         if not self.has_proxy:
             return ""
 
-        if self.proxy_user and self.proxy_password:
-            user = "{}:{}@".format(self.proxy_user, self.proxy_password)
-        else:
-            user = ""
-
-        if self.proxy_port:
-            port = ":{}".format(self.proxy_port)
-        else:
-            port = ""
+        user = ("{}:{}@".format(self.proxy_user, self.proxy_password)
+                if self.proxy_user and self.proxy_password else "")
+        port = ":{}".format(self.proxy_port) if self.proxy_port else ""
 
         return "-x{}{}{}".format(user, self.proxy_address, port)
 
@@ -328,10 +322,7 @@ class EventRouter():
         file_name_field is the json key whose value you want to be part of the file name
         """
         now = time.time()
-        if subdir:
-            directory = "{}/{}".format(RECORD_DIR, subdir)
-        else:
-            directory = RECORD_DIR
+        directory = "{}/{}".format(RECORD_DIR, subdir) if subdir else RECORD_DIR
         if not os.path.exists(directory):
             os.makedirs(directory)
         mtype = message_json.get(file_name_field, 'unknown')
@@ -1592,7 +1583,7 @@ class SlackChannel(SlackChannelCommon):
         self.new_messages = bool(self.unread_count_display)
         if self.muted and config.muted_channels_activity != "all":
             return
-        for c in range(self.unread_count_display):
+        for _ in range(self.unread_count_display):
             if self.type in ["im", "mpim"]:
                 w.buffer_set(self.channel_buffer, "hotlist", "2")
             else:
@@ -1842,7 +1833,7 @@ class SlackChannel(SlackChannelCommon):
         returns if any of them is actively typing. If none are,
         nulls the dict and returns false.
         """
-        for user, timestamp in self.typing.items():
+        for timestamp in self.typing.values():
             if timestamp + 4 > time.time():
                 return True
         if self.typing:
@@ -1907,7 +1898,11 @@ class SlackChannel(SlackChannelCommon):
             if not external:
                 external = w.nicklist_add_group(self.channel_buffer, '', NICK_GROUP_EXTERNAL, 'weechat.color.nicklist_group', 2)
 
-        if user and len(self.members) < 1000:
+        if len(self.members) > 999:
+            w.nicklist_remove_all(self.channel_buffer)
+            for fn in ["1| too", "2| many", "3| users", "4| to", "5| show"]:
+                w.nicklist_add_group(self.channel_buffer, '', fn, w.color('white'), 1)
+        elif user:
             user = self.team.users.get(user)
             # External users that have left shared channels won't exist
             if not user or user.deleted:
@@ -1926,24 +1921,19 @@ class SlackChannel(SlackChannelCommon):
 
         # if we didn't get a user, build a complete list. this is expensive.
         else:
-            if len(self.members) < 1000:
-                try:
-                    for member in self.members:
-                        user = self.team.users.get(member)
-                        if user.deleted:
-                            continue
-                        nick_group = afk
-                        if user.is_external:
-                            nick_group = external
-                        elif self.team.is_user_present(user.identifier):
-                            nick_group = here
-                        w.nicklist_add_nick(self.channel_buffer, nick_group, user.name, user.color_name, "", "", 1)
-                except:
-                    dbg("DEBUG: {} {} {}".format(self.identifier, self.name, format_exc_only()))
-            else:
-                w.nicklist_remove_all(self.channel_buffer)
-                for fn in ["1| too", "2| many", "3| users", "4| to", "5| show"]:
-                    w.nicklist_add_group(self.channel_buffer, '', fn, w.color('white'), 1)
+            try:
+                for member in self.members:
+                    user = self.team.users.get(member)
+                    if user.deleted:
+                        continue
+                    nick_group = afk
+                    if user.is_external:
+                        nick_group = external
+                    elif self.team.is_user_present(user.identifier):
+                        nick_group = here
+                    w.nicklist_add_nick(self.channel_buffer, nick_group, user.name, user.color_name, "", "", 1)
+            except:
+                dbg("DEBUG: {} {} {}".format(self.identifier, self.name, format_exc_only()))
 
     def render(self, message, force=False):
         text = message.render(force)
@@ -2146,6 +2136,7 @@ class SlackThreadChannel(SlackChannelCommon):
     """
 
     def __init__(self, eventrouter, parent_message):
+        self.active = False
         self.eventrouter = eventrouter
         self.parent_message = parent_message
         self.hashed_messages = {}
@@ -3429,10 +3420,10 @@ def create_user_status_string(profile):
 
 def create_reaction_string(reactions):
     count = 0
-    if not isinstance(reactions, list):
+    if reactions and not isinstance(reactions, list):
         reaction_string = " {}[{}]{}".format(
-                w.color(config.color_reaction_suffix), reactions, w.color("reset"))
-
+            w.color(config.color_reaction_suffix), reactions, w.color("reset"))
+        count += 1
     else:
         reaction_string = ' {}['.format(w.color(config.color_reaction_suffix))
         for r in reactions:
@@ -3445,6 +3436,7 @@ def create_reaction_string(reactions):
                     users = len(r["users"])
                 reaction_string += ":{}:{} ".format(r["name"], users)
         reaction_string = reaction_string[:-1] + ']'
+
     if count == 0:
         reaction_string = ''
     return reaction_string
@@ -4418,20 +4410,20 @@ class InvalidType(Exception):
 
 
 def closed_slack_debug_buffer_cb(data, buffer):
-    global slack_debug
-    slack_debug = None
+    global SLACK_DEBUG
+    SLACK_DEBUG = None
     return w.WEECHAT_RC_OK
 
 
 def create_slack_debug_buffer():
-    global slack_debug, debug_string
-    if slack_debug is not None:
-        w.buffer_set(slack_debug, "display", "1")
+    global SLACK_DEBUG, DEBUG_STRING
+    if SLACK_DEBUG is not None:
+        w.buffer_set(SLACK_DEBUG, "display", "1")
     else:
-        debug_string = None
-        slack_debug = w.buffer_new("slack-debug", "", "", "closed_slack_debug_buffer_cb", "")
-        w.buffer_set(slack_debug, "notify", "0")
-        w.buffer_set(slack_debug, "highlight_tags_restrict", "highlight_force")
+        DEBUG_STRING = None
+        SLACK_DEBUG = w.buffer_new("slack-debug", "", "", "closed_slack_debug_buffer_cb", "")
+        w.buffer_set(SLACK_DEBUG, "notify", "0")
+        w.buffer_set(SLACK_DEBUG, "highlight_tags_restrict", "highlight_force")
 
 
 def load_emoji():
@@ -4537,18 +4529,17 @@ def dbg(message, level=0, main_buffer=False, fout=False):
     # TODO: do this smarter
     # return
     if level >= config.debug_level:
-        global debug_string
+        global DEBUG_STRING
         message = "DEBUG: {}".format(message)
         if fout:
             with open('/tmp/debug.log', 'a+') as log_file:
                 log_file.writelines(message + '\n')
         if main_buffer:
-                # w.prnt("", "---------")
-                w.prnt("", "slack: " + message)
-        else:
-            if slack_debug and (not debug_string or debug_string in message):
-                # w.prnt(slack_debug, "---------")
-                w.prnt(slack_debug, message)
+            # w.prnt("", "---------")
+            w.prnt("", "slack: " + message)
+        elif slack_debug and (not debug_string or debug_string in message):
+            # w.prnt(slack_debug, "---------")
+            w.prnt(slack_debug, message)
 
 ### ~*~ CONFIG ~*~
 
@@ -4848,7 +4839,8 @@ if __name__ == "__main__":
         # setup_trace()
 
         # global variables
-        slack_debug = None
+        SLACK_DEBUG = None
+        DEBUG_STRING = None
         config = PluginConfig()
         config_changed_cb = config.config_changed
 

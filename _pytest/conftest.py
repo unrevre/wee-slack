@@ -120,8 +120,8 @@ def mock_weechat():
     wee_slack.w = FakeWeechat()
     wee_slack.config = wee_slack.PluginConfig()
     wee_slack.hdata = wee_slack.Hdata(wee_slack.w)
-    wee_slack.debug_string = None
-    wee_slack.slack_debug = "debug_buffer_ptr"
+    wee_slack.DEBUG_STRING = None
+    wee_slack.SLACK_DEBUG = "debug_buffer_ptr"
     wee_slack.STOP_TALKING_TO_SLACK = False
     wee_slack.proc = {}
     wee_slack.weechat_version = 0x10500000
