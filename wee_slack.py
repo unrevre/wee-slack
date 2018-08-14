@@ -4832,8 +4832,7 @@ def initiate_connection(t, retries=3, team_hash=None):
 
 
 if __name__ == "__main__":
-
-    w = WeechatWrapper(weechat)
+    w = weechat
 
     if w.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE,
                   SCRIPT_DESC, "script_unloaded", ""):
