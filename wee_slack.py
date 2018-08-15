@@ -131,17 +131,6 @@ def slack_buffer_required(f):
         return f(data, current_buffer, *args, **kwargs)
     return wrapper
 
-
-def utf8_decode(f):
-    """
-    Decode all arguments from byte strings to unicode strings. Use this for
-    functions called from outside of this script, e.g. callbacks from weechat.
-    """
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        return f(*decode_from_utf8(args), **decode_from_utf8(kwargs))
-    return wrapper
-
 ### ~*~ DECORATORS END
 
 
@@ -156,47 +145,6 @@ if hasattr(ssl, "get_default_verify_paths") and callable(ssl.get_default_verify_
         sslopt_ca_certs = {'ca_certs': ssl_defaults.cafile}
 
 EMOJI = []
-
-### ~*~ UNICODE ~*~
-
-
-def encode_to_utf8(data):
-    return data
-
-
-def decode_from_utf8(data):
-    return data
-
-### ~*~ UNICODE END
-
-
-class WeechatWrapper():
-    def __init__(self, wrapped_class):
-        self.wrapped_class = wrapped_class
-
-    # Helper method used to encode/decode method calls.
-    def wrap_for_utf8(self, method):
-        def hooked(*args, **kwargs):
-            result = method(*encode_to_utf8(args), **encode_to_utf8(kwargs))
-            # Prevent wrapped_class from becoming unwrapped
-            if result == self.wrapped_class:
-                return self
-            return decode_from_utf8(result)
-        return hooked
-
-    # Encode and decode everything sent to/received from weechat. We use the
-    # unicode type internally in wee-slack, but has to send utf8 to weechat.
-    def __getattr__(self, attr):
-        orig_attr = self.wrapped_class.__getattribute__(attr)
-        if callable(orig_attr):
-            return self.wrap_for_utf8(orig_attr)
-        return decode_from_utf8(orig_attr)
-
-    # Ensure all lines sent to weechat specifies a prefix. For lines after the
-    # first, we want to disable the prefix, which is done by specifying a space.
-    def prnt_date_tags(self, buffer, date, tags, message):
-        message = message.replace("\n", "\n \t")
-        return self.wrap_for_utf8(self.wrapped_class.prnt_date_tags)(buffer, date, tags, message)
 
 
 class ProxyWrapper():
@@ -237,13 +185,11 @@ class ProxyWrapper():
 
 
 def format_exc_tb():
-    return decode_from_utf8(traceback.format_exc())
-
+    return traceback.format_exc()
 
 def format_exc_only():
     etype, value, _ = sys.exc_info()
-    return ''.join(decode_from_utf8(traceback.format_exception_only(etype, value)))
-
+    return ''.join(traceback.format_exception_only(etype, value))
 
 def get_nick_color_name(nick):
     return w.info_get("nick_color_name", nick)
@@ -420,7 +366,7 @@ class EventRouter():
             if opcode != ABNF.OPCODE_TEXT:
                 return w.WEECHAT_RC_OK
 
-            message_json = json.loads(data.decode('utf-8'))
+            message_json = json.loads(data)
             metadata = WeeSlackMetadata({
                 "team": team_hash,
             }).jsonify()
@@ -677,7 +623,6 @@ def local_process_async_slack_api_request(request, event_router):
 ### ~*~ CALLBACKS ~*~
 
 
-@utf8_decode
 def receive_httprequest_callback(data, command, return_code, out, err):
     """
     complete
@@ -688,7 +633,6 @@ def receive_httprequest_callback(data, command, return_code, out, err):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def receive_ws_callback(*args):
     """
     complete
@@ -700,7 +644,6 @@ def receive_ws_callback(*args):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def ws_ping_cb(data, remaining_calls):
     for team in EVENTROUTER.teams.values():
         if team.ws and team.connected:
@@ -712,13 +655,11 @@ def ws_ping_cb(data, remaining_calls):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def reconnect_callback(*args):
     EVENTROUTER.reconnect_if_disconnected()
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def buffer_closing_callback(signal, sig_type, data):
     """
     Receives a callback from weechat when a buffer is being closed.
@@ -727,7 +668,6 @@ def buffer_closing_callback(signal, sig_type, data):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def buffer_input_callback(signal, buffer_ptr, data):
     """
     incomplete
@@ -781,14 +721,13 @@ def buffer_input_callback(signal, buffer_ptr, data):
 def input_text_for_buffer_cb(data, modifier, current_buffer, text):
     if current_buffer not in EVENTROUTER.weechat_controller.buffers:
         return text
-    message = decode_from_utf8(text)
+    message = text
     if not message.startswith("/") and "\n" in message:
         buffer_input_callback("EVENTROUTER", current_buffer, message)
         return ""
     return text
 
 
-@utf8_decode
 def buffer_switch_callback(signal, sig_type, data):
     """
     incomplete
@@ -813,7 +752,6 @@ def buffer_switch_callback(signal, sig_type, data):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def buffer_list_update_callback(data, somecount):
     """
     incomplete
@@ -842,7 +780,6 @@ def quit_notification_callback(signal, sig_type, data):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def typing_notification_cb(data, signal, current_buffer):
     msg = w.buffer_get_string(current_buffer, "input")
     if len(msg) > 8 and msg[0] != "/":
@@ -858,13 +795,11 @@ def typing_notification_cb(data, signal, current_buffer):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def typing_update_cb(data, remaining_calls):
     w.bar_item_update("slack_typing_notice")
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def slack_never_away_cb(data, remaining_calls):
     if config.never_away:
         for team in EVENTROUTER.teams.values():
@@ -875,7 +810,6 @@ def slack_never_away_cb(data, remaining_calls):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def typing_bar_item_cb(data, item, current_window, current_buffer, extra_info):
     """
     Privides a bar item indicating who is typing in the current channel AND
@@ -908,7 +842,6 @@ def typing_bar_item_cb(data, item, current_window, current_buffer, extra_info):
     return typing
 
 
-@utf8_decode
 def channel_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all channels on all teams to completion list
@@ -932,7 +865,6 @@ def channel_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def dm_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all dms/mpdms on all teams to completion list
@@ -944,7 +876,6 @@ def dm_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def nick_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all @-prefixed nicks to completion list
@@ -967,7 +898,6 @@ def nick_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def emoji_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all :-prefixed emoji to completion list
@@ -986,7 +916,6 @@ def emoji_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def thread_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all $-prefixed thread ids to completion list
@@ -1002,7 +931,6 @@ def thread_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def topic_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds topic for current channel to completion list
@@ -1020,7 +948,6 @@ def topic_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def usergroups_completion_cb(data, completion_item, current_buffer, completion):
     """
     Adds all @-prefixed usergroups to completion list
@@ -1035,7 +962,6 @@ def usergroups_completion_cb(data, completion_item, current_buffer, completion):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def complete_next_cb(data, current_buffer, command):
     """Extract current word, if it is equal to a nick, prefix it with @ and
     rely on nick_completion_cb adding the @-prefixed versions to the
@@ -1121,7 +1047,7 @@ class SlackRequest():
         post_data["token"] = token
         self.post_data = post_data
         self.params = {'useragent': 'wee_slack {}'.format(SCRIPT_VERSION)}
-        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urllib.parse.urlencode(encode_to_utf8(post_data)))
+        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urllib.parse.urlencode(post_data))
         self.response_id = sha1_hex("{}{}".format(self.url, self.start_time))
         self.retries = kwargs.get('retries', 3)
 #    def __repr__(self):
@@ -1379,7 +1305,7 @@ class SlackTeam():
         try:
             if expect_reply:
                 self.ws_replies[data["id"]] = data
-            self.ws.send(encode_to_utf8(message))
+            self.ws.send(message)
             dbg("Sent {}...".format(message[:100]))
         except (WebSocketConnectionClosedException, socket.error) as e:
             handle_socket_error(e, self, 'send')
@@ -3553,7 +3479,6 @@ def tag(tagset=None, user=None, self_msg=False, backlog=False, no_log=False, ext
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def invite_command_cb(data, current_buffer, args):
     team = EVENTROUTER.weechat_controller.buffers[current_buffer].team
     split_args = args.split()[1:]
@@ -3588,7 +3513,6 @@ def invite_command_cb(data, current_buffer, args):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def part_command_cb(data, current_buffer, args):
     e = EVENTROUTER
     args = args.split()
@@ -3629,7 +3553,6 @@ def parse_topic_command(command):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def topic_command_cb(data, current_buffer, command):
     """
     Change the topic of a channel
@@ -3658,7 +3581,6 @@ def topic_command_cb(data, current_buffer, command):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def whois_command_cb(data, current_buffer, command):
     """
     Get real name of user
@@ -3698,7 +3620,6 @@ def whois_command_cb(data, current_buffer, command):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def me_command_cb(data, current_buffer, args):
     channel = EVENTROUTER.weechat_controller.buffers[current_buffer]
     message = args.split(' ', 1)[1]
@@ -3706,7 +3627,6 @@ def me_command_cb(data, current_buffer, args):
     return w.WEECHAT_RC_OK_EAT
 
 
-@utf8_decode
 def command_register(data, current_buffer, args):
     """
     /slack register [code]
@@ -3737,7 +3657,6 @@ def command_register(data, current_buffer, args):
     return w.WEECHAT_RC_OK_EAT
 
 
-@utf8_decode
 def register_callback(data, command, return_code, out, err):
     if return_code != 0:
         w.prnt("", "ERROR: problem when trying to get Slack OAuth token. Got return code {}. Err: {}".format(return_code, err))
@@ -3769,7 +3688,6 @@ def register_callback(data, command, return_code, out, err):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def msg_command_cb(data, current_buffer, args):
     aargs = args.split(None, 2)
     who = aargs[1].lstrip('@')
@@ -3806,7 +3724,6 @@ def print_users_info(team, header, users):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_teams(data, current_buffer, args):
     """
     /slack teams
@@ -3819,7 +3736,6 @@ def command_teams(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_channels(data, current_buffer, args):
     """
     /slack channels
@@ -3838,7 +3754,6 @@ def command_channels(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_users(data, current_buffer, args):
     """
     /slack users
@@ -3849,7 +3764,6 @@ def command_users(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_usergroups(data, current_buffer, args):
     """
     /slack usergroups [handle]
@@ -3878,7 +3792,6 @@ command_usergroups.completion = '%(usergroups)'
 
 
 @slack_buffer_required
-@utf8_decode
 def command_talk(data, current_buffer, args):
     """
     /slack talk <user>[,<user2>[,<user3>...]]
@@ -3893,7 +3806,6 @@ command_talk.completion = '%(nicks)'
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def join_query_command_cb(data, current_buffer, args):
     team = EVENTROUTER.weechat_controller.buffers[current_buffer].team
     split_args = args.split(' ', 1)
@@ -3946,7 +3858,6 @@ def join_query_command_cb(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_showmuted(data, current_buffer, args):
     """
     /slack showmuted
@@ -3966,7 +3877,6 @@ def get_msg_from_id(channel, msg_id):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_thread(data, current_buffer, args):
     """
     /thread [message_id]
@@ -3995,7 +3905,6 @@ def command_thread(data, current_buffer, args):
 command_thread.completion = '%(threads)'
 
 @slack_buffer_required
-@utf8_decode
 def command_reply(data, current_buffer, args):
     """
     /reply <count/message_id> <text>
@@ -4026,7 +3935,6 @@ command_reply.completion = '%(threads)'
 
 
 @slack_buffer_required
-@utf8_decode
 def command_rehistory(data, current_buffer, args):
     """
     /rehistory
@@ -4039,7 +3947,6 @@ def command_rehistory(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_hide(data, current_buffer, args):
     """
     /hide
@@ -4052,7 +3959,6 @@ def command_hide(data, current_buffer, args):
     return w.WEECHAT_RC_OK_EAT
 
 
-@utf8_decode
 def slack_command_cb(data, current_buffer, args):
     split_args = args.split(' ', 1)
     cmd_name = split_args[0]
@@ -4064,7 +3970,6 @@ def slack_command_cb(data, current_buffer, args):
     return cmd(data, current_buffer, cmd_args)
 
 
-@utf8_decode
 def command_help(data, current_buffer, args):
     """
     /slack help [command]
@@ -4088,7 +3993,6 @@ def command_help(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_distracting(data, current_buffer, args):
     """
     /slack distracting
@@ -4106,7 +4010,6 @@ def command_distracting(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_slash(data, current_buffer, args):
     """
     /slack slash /customcommand arg1 arg2 arg3
@@ -4129,7 +4032,6 @@ def command_slash(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_mute(data, current_buffer, args):
     """
     /slack mute
@@ -4148,7 +4050,6 @@ def command_mute(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_linkarchive(data, current_buffer, args):
     """
     /slack linkarchive [message_id]
@@ -4180,7 +4081,6 @@ def command_linkarchive(data, current_buffer, args):
 command_linkarchive.completion = '%(threads)'
 
 
-@utf8_decode
 def command_nodistractions(data, current_buffer, args):
     """
     /slack nodistractions
@@ -4196,7 +4096,6 @@ def command_nodistractions(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_upload(data, current_buffer, args):
     """
     /slack upload <filename>
@@ -4242,7 +4141,6 @@ def command_upload(data, current_buffer, args):
 command_upload.completion = '%(filename)'
 
 
-@utf8_decode
 def upload_callback(data, command, return_code, out, err):
     if return_code != 0:
         w.prnt("", "ERROR: Couldn't upload file. Got return code {}. Error: {}".format(return_code, err))
@@ -4259,7 +4157,6 @@ def upload_callback(data, command, return_code, out, err):
     return w.WEECHAT_RC_OK_EAT
 
 
-@utf8_decode
 def away_command_cb(data, current_buffer, args):
     all_servers, message = re.match('^/away( -all)? ?(.*)', args).groups()
     if all_servers:
@@ -4278,7 +4175,6 @@ def away_command_cb(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_away(data, current_buffer, args):
     """
     /slack away
@@ -4291,7 +4187,6 @@ def command_away(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_status(data, current_buffer, args):
     """
     /slack status [<emoji> [<status_message>]|-delete]
@@ -4319,7 +4214,6 @@ def command_status(data, current_buffer, args):
 command_status.completion = "-delete|%(emoji)"
 
 
-@utf8_decode
 def line_event_cb(data, signal, hashtable):
     buffer_pointer = hashtable["_buffer"]
     line_timestamp = hashtable["_chat_line_date"]
@@ -4352,7 +4246,6 @@ def line_event_cb(data, signal, hashtable):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_back(data, current_buffer, args):
     """
     /slack back
@@ -4365,7 +4258,6 @@ def command_back(data, current_buffer, args):
 
 
 @slack_buffer_required
-@utf8_decode
 def command_label(data, current_buffer, args):
     """
     /label <name>
@@ -4380,7 +4272,6 @@ def command_label(data, current_buffer, args):
     return w.WEECHAT_RC_OK
 
 
-@utf8_decode
 def set_unread_cb(data, current_buffer, command):
     for channel in EVENTROUTER.weechat_controller.buffers.values():
         channel.mark_read()
@@ -4388,7 +4279,6 @@ def set_unread_cb(data, current_buffer, command):
 
 
 @slack_buffer_or_ignore
-@utf8_decode
 def set_unread_current_buffer_cb(data, current_buffer, command):
     channel = EVENTROUTER.weechat_controller.buffers[current_buffer]
     channel.mark_read()
