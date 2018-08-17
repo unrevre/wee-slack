@@ -474,61 +474,62 @@ class EventRouter():
             self.queue.append(self.slow_queue.pop())
             # self.slow_queue = []
             self.slow_queue_timer = time.time()
-        if self.queue:
-            j = self.queue.pop(0)
-            # Reply is a special case of a json reply from websocket.
-            kwargs = {}
-            if isinstance(j, SlackRequest):
-                if j.should_try():
-                    if j.retry_ready():
-                        local_process_async_slack_api_request(j, self)
-                    else:
-                        self.slow_queue.append(j)
-                else:
-                    dbg("Max retries for Slackrequest")
+        if not self.queue:
+            return
 
+        j = self.queue.pop(0)
+        # Reply is a special case of a json reply from websocket.
+        kwargs = {}
+        if isinstance(j, SlackRequest):
+            if j.should_try():
+                if j.retry_ready():
+                    local_process_async_slack_api_request(j, self)
+                else:
+                    self.slow_queue.append(j)
             else:
+                dbg("Max retries for Slackrequest")
 
-                if "reply_to" in j:
-                    dbg("SET FROM REPLY")
-                    function_name = "reply"
-                elif "type" in j:
-                    dbg("SET FROM type")
-                    function_name = j["type"]
-                elif "wee_slack_process_method" in j:
-                    dbg("SET FROM META")
-                    function_name = j["wee_slack_process_method"]
-                else:
-                    dbg("SET FROM NADA")
-                    function_name = "unknown"
+        else:
+            if "reply_to" in j:
+                dbg("SET FROM REPLY")
+                function_name = "reply"
+            elif "type" in j:
+                dbg("SET FROM type")
+                function_name = j["type"]
+            elif "wee_slack_process_method" in j:
+                dbg("SET FROM META")
+                function_name = j["wee_slack_process_method"]
+            else:
+                dbg("SET FROM NADA")
+                function_name = "unknown"
 
-                # Here we are passing the actual objects. No more lookups.
-                meta = j.get("wee_slack_metadata")
-                if meta:
-                    try:
-                        if isinstance(meta, str):
-                            dbg("string of metadata")
-                        team = meta.get("team")
-                        if team:
-                            kwargs["team"] = self.teams[team]
-                            if "user" in j:
-                                kwargs["user"] = self.teams[team].users[j["user"]]
-                            if "channel" in j:
-                                kwargs["channel"] = self.teams[team].channels[j["channel"]]
-                            if "subteam" in j:
-                                kwargs["subteam"] = self.teams[team].subteams[j["subteam"]]
-                    except:
-                        dbg("metadata failure")
+            # Here we are passing the actual objects. No more lookups.
+            meta = j.get("wee_slack_metadata")
+            try:
+                if isinstance(meta, str):
+                    dbg("string of metadata")
+                team = meta.get("team")
+                if team:
+                    kwargs["team"] = self.teams[team]
+                    if "user" in j:
+                        kwargs["user"] = self.teams[team].users[j["user"]]
+                    if "channel" in j:
+                        kwargs["channel"] = self.teams[team].channels[j["channel"]]
+                    if "subteam" in j:
+                        kwargs["subteam"] = self.teams[team].subteams[j["subteam"]]
+            except:
+                dbg("metadata failure")
 
-                dbg("running {}".format(function_name))
-                if function_name.startswith("local_") and function_name in self.local_proc:
-                    self.local_proc[function_name](j, self, **kwargs)
-                elif function_name in self.proc:
-                    self.proc[function_name](j, self, **kwargs)
-                elif function_name in self.handlers:
-                    self.handlers[function_name](j, self, **kwargs)
-                else:
-                    dbg("Callback not implemented for event: {}".format(function_name))
+            dbg("running {}".format(function_name))
+            if (function_name.startswith("local_")
+                    and function_name in self.local_proc):
+                self.local_proc[function_name](j, self, **kwargs)
+            elif function_name in self.proc:
+                self.proc[function_name](j, self, **kwargs)
+            elif function_name in self.handlers:
+                self.handlers[function_name](j, self, **kwargs)
+            else:
+                dbg("Callback not implemented for event: {}".format(function_name))
 
 
 def handle_next(*args):
@@ -831,13 +832,11 @@ def typing_bar_item_cb(data, item, current_window, current_buffer, extra_info):
     # regardless of which buffer you are in currently
     for team in EVENTROUTER.teams.values():
         for channel in team.channels.values():
-            if channel.type == "im":
-                if channel.is_someone_typing():
-                    typers.append("D/" + channel.slack_name)
+            if channel.type == "im" and channel.is_someone_typing():
+                typers.append("D/" + channel.slack_name)
 
-    typing = ", ".join(typers)
-    if typing != "":
-        typing = w.color('yellow') + "typing: " + typing
+    if typers:
+        typing = w.color('yellow') + "typing: " + ", ".join(typers)
 
     return typing
 
@@ -981,8 +980,6 @@ def complete_next_cb(data, current_buffer, command):
     # If we're on a non-word, look left for something to complete
     while current_pos >= 0 and line_input[current_pos] != '@' and not line_input[current_pos].isalnum():
         current_pos = current_pos - 1
-    if current_pos < 0:
-        current_pos = 0
     for l in range(current_pos, 0, -1):
         if line_input[l] != '@' and not line_input[l].isalnum():
             word_start = l + 1
@@ -1117,7 +1114,7 @@ class SlackTeam():
         self.myidentifier = myidentifier
         try:
             if self.channels:
-                for c in channels.keys():
+                for c in channels:
                     if not self.channels.get(c):
                         self.channels[c] = channels[c]
         except:
@@ -1130,9 +1127,9 @@ class SlackTeam():
         self.got_history = True
         self.create_buffer()
         self.set_muted_channels(kwargs.get('muted_channels', ""))
-        for c in self.channels.keys():
-            channels[c].set_related_server(self)
-            channels[c].check_should_open()
+        for channel in self.channels.values():
+            channel.set_related_server(self)
+            channel.check_should_open()
         # Last step is to make sure my nickname is the set color
         self.users[self.myidentifier].force_color(w.config_string(w.config_get('weechat.color.chat_nick_self')))
         # This highlight step must happen after we have set related server
@@ -1249,37 +1246,39 @@ class SlackTeam():
         pass
 
     def connect(self):
-        if not self.connected and not self.connecting_ws:
-            if self.ws_url:
-                self.connecting_ws = True
-                try:
-                    # only http proxy is currently supported
-                    proxy = ProxyWrapper()
-                    if proxy.has_proxy == True:
-                        ws = create_connection(self.ws_url, sslopt=sslopt_ca_certs, http_proxy_host=proxy.proxy_address, http_proxy_port=proxy.proxy_port, http_proxy_auth=(proxy.proxy_user, proxy.proxy_password))
-                    else:
-                        ws = create_connection(self.ws_url, sslopt=sslopt_ca_certs)
+        if self.connected or self.connecting_ws:
+            return
 
-                    self.hook = w.hook_fd(ws.sock.fileno(), 1, 0, 0, "receive_ws_callback", self.get_team_hash())
-                    ws.sock.setblocking(0)
-                    self.ws = ws
-                    self.set_reconnect_url(None)
-                    self.set_connected()
-                    self.connecting_ws = False
-                except:
-                    w.prnt(self.channel_buffer,
-                            'Failed connecting to slack team {}, retrying.'.format(self.domain))
-                    dbg('connect failed with exception:\n{}'.format(format_exc_tb()), level=5)
-                    self.connecting_ws = False
-                    return False
-            elif not self.connecting_rtm:
-                # The fast reconnect failed, so start over-ish
-                for chan in self.channels:
-                    self.channels[chan].got_history = False
-                s = initiate_connection(self.token, retries=999, team_hash=self.team_hash)
-                self.eventrouter.receive(s)
-                self.connecting_rtm = True
-                # del self.eventrouter.teams[self.get_team_hash()]
+        if self.ws_url:
+            self.connecting_ws = True
+            try:
+                # only http proxy is currently supported
+                proxy = ProxyWrapper()
+                if proxy.has_proxy == True:
+                    ws = create_connection(self.ws_url, sslopt=sslopt_ca_certs, http_proxy_host=proxy.proxy_address, http_proxy_port=proxy.proxy_port, http_proxy_auth=(proxy.proxy_user, proxy.proxy_password))
+                else:
+                    ws = create_connection(self.ws_url, sslopt=sslopt_ca_certs)
+
+                self.hook = w.hook_fd(ws.sock.fileno(), 1, 0, 0, "receive_ws_callback", self.get_team_hash())
+                ws.sock.setblocking(0)
+                self.ws = ws
+                self.set_reconnect_url(None)
+                self.set_connected()
+                self.connecting_ws = False
+            except:
+                w.prnt(self.channel_buffer,
+                        'Failed connecting to slack team {}, retrying.'.format(self.domain))
+                dbg('connect failed with exception:\n{}'.format(format_exc_tb()), level=5)
+                self.connecting_ws = False
+                return False
+        elif not self.connecting_rtm:
+            # The fast reconnect failed, so start over-ish
+            for chan in self.channels:
+                self.channels[chan].got_history = False
+            s = initiate_connection(self.token, retries=999, team_hash=self.team_hash)
+            self.eventrouter.receive(s)
+            self.connecting_rtm = True
+            # del self.eventrouter.teams[self.get_team_hash()]
 
     def set_connected(self):
         self.connected = True
@@ -1313,10 +1312,9 @@ class SlackTeam():
     def update_member_presence(self, user, presence):
         user.presence = presence
 
-        for c in self.channels:
-            c = self.channels[c]
-            if user.id in c.members:
-                c.update_nicklist(user.id)
+        for channel in self.channels.values():
+            if user.id in channel.members:
+                channel.update_nicklist(user.id)
 
     def subscribe_users_presence(self):
         # FIXME: There is a limitation in the API to the size of the
@@ -1407,12 +1405,9 @@ class SlackChannelCommon():
     def hash_message(self, ts):
         ts = SlackTS(ts)
 
-        def calc_hash(msg):
-            return sha1_hex(str(msg.ts))
-
         if ts in self.messages and not self.messages[ts].hash:
             message = self.messages[ts]
-            tshash = calc_hash(message)
+            tshash = sha1_hex(str(message.ts))
             hl = 3
             shorthash = tshash[:hl]
             while any(x.startswith(shorthash) for x in self.hashed_messages):
@@ -1421,7 +1416,7 @@ class SlackChannelCommon():
 
             if shorthash[:-1] in self.hashed_messages:
                 col_msg = self.hashed_messages.pop(shorthash[:-1])
-                col_new_hash = calc_hash(col_msg)[:hl]
+                col_new_hash = sha1_hex(str(col_msg.ts))[:hl]
                 col_msg.hash = col_new_hash
                 self.hashed_messages[col_new_hash] = col_msg
                 self.change_message(str(col_msg.ts))
@@ -1794,8 +1789,7 @@ class SlackChannel(SlackChannelCommon):
                 self.new_messages = False
 
     def user_joined(self, user_id):
-        # ugly hack - for some reason this gets turned into a list
-        self.members = set(self.members)
+        # self.members = set(self.members)
         self.members.add(user_id)
         self.update_nicklist(user_id)
 
@@ -3238,60 +3232,63 @@ def unhtmlescape(text):
 
 
 def unwrap_attachments(message_json, text_before):
+    a = message_json.get("attachments")
+    if not a:
+        return ""
+
     text_before_unescaped = unhtmlescape(text_before)
     attachment_texts = []
-    a = message_json.get("attachments")
-    if a:
-        if text_before:
-            attachment_texts.append('')
-        for attachment in a:
-            # Attachments should be rendered roughly like:
-            #
-            # $pretext
-            # $author: (if rest of line is non-empty) $title ($title_link) OR $from_url
-            # $author: (if no $author on previous line) $text
-            # $fields
-            t = []
+
+    if text_before:
+        attachment_texts.append('')
+    for attachment in a:
+        # Attachments should be rendered roughly like:
+        #
+        # $pretext
+        # $author: (if rest of line is non-empty) $title ($title_link) OR $from_url
+        # $author: (if no $author on previous line) $text
+        # $fields
+        t = []
+        prepend_title_text = ''
+        if 'author_name' in attachment:
+            prepend_title_text = attachment['author_name'] + ": "
+        if 'pretext' in attachment:
+            t.append(attachment['pretext'])
+        title = attachment.get('title')
+        title_link = attachment.get('title_link', '')
+        if title_link in text_before_unescaped:
+            title_link = ''
+        if title and title_link:
+            t.append('{}{} ({})'.format(prepend_title_text, title, title_link))
             prepend_title_text = ''
-            if 'author_name' in attachment:
-                prepend_title_text = attachment['author_name'] + ": "
-            if 'pretext' in attachment:
-                t.append(attachment['pretext'])
-            title = attachment.get('title')
-            title_link = attachment.get('title_link', '')
-            if title_link in text_before_unescaped:
-                title_link = ''
-            if title and title_link:
-                t.append('%s%s (%s)' % (prepend_title_text, title, title_link,))
-                prepend_title_text = ''
-            elif title and not title_link:
-                t.append('%s%s' % (prepend_title_text, title,))
-                prepend_title_text = ''
-            from_url = attachment.get('from_url', '')
-            if from_url not in text_before_unescaped and from_url != title_link:
-                t.append(from_url)
+        elif title and not title_link:
+            t.append('{}{}'.format(prepend_title_text, title))
+            prepend_title_text = ''
+        from_url = attachment.get('from_url', '')
+        if from_url not in text_before_unescaped and from_url != title_link:
+            t.append(from_url)
 
-            atext = attachment.get("text")
-            if atext:
-                tx = re.sub(r' *\n[\n ]+', '\n', atext)
-                t.append(prepend_title_text + tx)
-                prepend_title_text = ''
+        atext = attachment.get("text")
+        if atext:
+            tx = re.sub(r' *\n[\n ]+', '\n', atext)
+            t.append(prepend_title_text + tx)
+            prepend_title_text = ''
 
-            image_url = attachment.get('image_url', '')
-            if image_url not in text_before_unescaped and image_url != title_link:
-                t.append(image_url)
+        image_url = attachment.get('image_url', '')
+        if image_url not in text_before_unescaped and image_url != title_link:
+            t.append(image_url)
 
-            fields = attachment.get("fields")
-            if fields:
-                for f in fields:
-                    if f.get('title'):
-                        t.append('%s %s' % (f['title'], f['value'],))
-                    else:
-                        t.append(f['value'])
-            fallback = attachment.get("fallback")
-            if t == [] and fallback:
-                t.append(fallback)
-            attachment_texts.append("\n".join([x.strip() for x in t if x]))
+        fields = attachment.get("fields")
+        if fields:
+            for f in fields:
+                if f.get('title'):
+                    t.append('{} {}'.format(f['title'], f['value'],))
+                else:
+                    t.append(f['value'])
+        fallback = attachment.get("fallback")
+        if t == [] and fallback:
+            t.append(fallback)
+        attachment_texts.append("\n".join([x.strip() for x in t if x]))
     return "\n".join(attachment_texts)
 
 
