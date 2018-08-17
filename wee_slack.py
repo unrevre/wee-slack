@@ -44,7 +44,7 @@ SCRIPT_NAME = "slack"
 SCRIPT_AUTHOR = "Ryan Huber <rhuber@gmail.com>"
 SCRIPT_VERSION = "2.3.0"
 SCRIPT_LICENSE = "MIT"
-SCRIPT_DESC = "Extends weechat for typing notification/search/etc on slack.com"
+SCRIPT_DESC = "native weechat client for slack"
 
 BACKLOG_SIZE = 200
 SCROLLBACK_SIZE = 500
