@@ -1,3 +1,5 @@
+# pylint: disable=missing-docstring,invalid-name,unused-argument
+
 # Copyright (c) 2014-2016 Ryan Huber <rhuber@gmail.com>
 # Copyright (c) 2015-2018 Tollef Fog Heen <tfheen@err.no>
 # Copyright (c) 2015-2019 Trygve Aaberge <trygveaa@gmail.com>
