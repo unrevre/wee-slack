@@ -1579,7 +1579,7 @@ class SlackChannel(SlackChannelCommon):
         self.get_history()
 
     def check_should_open(self, force=False):
-        if hasattr(self, "is_archived") and self.is_archived:
+        if getattr(self, "is_archives", None):
             return
 
         if force:
@@ -1588,7 +1588,9 @@ class SlackChannel(SlackChannelCommon):
 
         # Only check is_member if is_open is not set, because in some cases
         # (e.g. group DMs), is_member should be ignored in favor of is_open.
-        is_open = self.is_open if hasattr(self, "is_open") else self.is_member
+        is_open = getattr(self, "is_open", None)
+        if is_open is None:
+            is_open = getattr(self, "is_member", None)
         if is_open or self.unread_count_display:
             self.create_buffer()
             if config.background_load_all_history:
