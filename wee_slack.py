@@ -1078,6 +1078,7 @@ class SlackSubteam():
        self.description = kwargs.get('description')
        self.team_id = originating_team_id
        self.is_member = is_member
+       self.subteam_id = None
 
    def __repr__(self):
        return "Name:{} Identifier:{}".format(self.name, self.identifier)
@@ -1099,6 +1100,7 @@ class SlackTeam():
         self.connected = False
         self.connecting_rtm = False
         self.connecting_ws = False
+        self.hook = None
         self.ws = None
         self.ws_counter = 0
         self.ws_replies = {}
@@ -1331,6 +1333,18 @@ class SlackTeam():
 
 
 class SlackChannelCommon():
+    """
+    Methods common to slack channels/threads
+    """
+
+    def __init__(self, eventrouter, **kwargs):
+        self.eventrouter = eventrouter
+        self.identifier = None
+        self.channel_buffer = None
+        self.team = None
+        self.messages = OrderedDict()
+        self.hashed_messages = {}
+
     def send_add_reaction(self, msg_id, reaction):
         self.send_change_reaction("reactions.add", msg_id, reaction)
 
@@ -1442,12 +1456,13 @@ class SlackChannel(SlackChannelCommon):
     """
 
     def __init__(self, eventrouter, **kwargs):
+        super().__init__(eventrouter, **kwargs)
+
         # We require these two things for a valid object,
         # the rest we can just learn from slack
         self.active = False
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.eventrouter = eventrouter
         self.slack_name = kwargs["name"]
         self.slack_purpose = kwargs.get("purpose", {"value": ""})
         self.topic = kwargs.get("topic", {"value": ""})
@@ -1456,8 +1471,6 @@ class SlackChannel(SlackChannelCommon):
         self.channel_buffer = None
         self.team = kwargs.get('team')
         self.got_history = False
-        self.messages = OrderedDict()
-        self.hashed_messages = {}
         self.new_messages = False
         self.typing = {}
         self.type = 'channel'
@@ -2059,10 +2072,10 @@ class SlackThreadChannel(SlackChannelCommon):
     """
 
     def __init__(self, eventrouter, parent_message):
+        super().__init__(eventrouter)
+
         self.active = False
-        self.eventrouter = eventrouter
         self.parent_message = parent_message
-        self.hashed_messages = {}
         self.channel_buffer = None
         # self.identifier = ""
         # self.name = "#" + kwargs['name']
@@ -2228,6 +2241,8 @@ class SlackUser():
 
         self.name = nick_from_profile(self.profile, kwargs["name"])
         self.username = kwargs["name"]
+        self.color_name = None
+        self.color = None
         self.update_color()
 
     def __repr__(self):
