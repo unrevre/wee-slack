@@ -1332,7 +1332,7 @@ class SlackTeam():
         }, expect_reply=False)
 
 
-class SlackChannelCommon():
+class SlackChannelCommon(metaclass=abc.ABCMeta):
     """
     Methods common to slack channels/threads
     """
@@ -1344,6 +1344,14 @@ class SlackChannelCommon():
         self.team = None
         self.messages = OrderedDict()
         self.hashed_messages = {}
+
+    @abc.abstractmethod
+    def main_message_keys_reversed(self):
+        pass
+
+    @abc.abstractmethod
+    def render(self, message, force=False):
+        pass
 
     def send_add_reaction(self, msg_id, reaction):
         self.send_change_reaction("reactions.add", msg_id, reaction)
