@@ -1274,7 +1274,7 @@ class SlackTeam():
                         'Failed connecting to slack team {}, retrying.'.format(self.domain))
                 dbg('connect failed with exception:\n{}'.format(format_exc_tb()), level=5)
                 self.connecting_ws = False
-                return False
+                return
         elif not self.connecting_rtm:
             # The fast reconnect failed, so start over-ish
             for chan in self.channels:
@@ -2163,7 +2163,8 @@ class SlackThreadChannel(SlackChannelCommon):
     def send_message(self, message, subtype=None):
         if subtype == 'me_message':
             w.prnt("", "ERROR: /me is not supported in threads")
-            return w.WEECHAT_RC_ERROR
+            # return w.WEECHAT_RC_ERROR
+            return
         message = linkify_text(message, self.team)
         dbg(message)
         request = {"type": "message", "text": message,
