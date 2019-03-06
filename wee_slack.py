@@ -262,7 +262,8 @@ class EventRouter():
             if not os.path.exists(RECORD_DIR):
                 os.makedirs(RECORD_DIR)
 
-    def record_event(self, message_json, file_name_field, subdir=None):
+    @staticmethod
+    def record_event(message_json, file_name_field, subdir=None):
         """
         complete
         Called each time you want to record an event.
@@ -1210,7 +1211,8 @@ class SlackTeam():
         tag_name = "team_message" if message else "team_info"
         w.prnt_date_tags(self.channel_buffer, SlackTS().major, tag(tag_name), data)
 
-    def send_message(self, message, subtype=None, request_dict_ext=None):
+    @staticmethod
+    def send_message(message, subtype=None, request_dict_ext=None):
         w.prnt("", "ERROR: Sending a message in the team buffer is not supported")
 
     def find_channel_by_members(self, members, channel_type=None):
@@ -4661,13 +4663,16 @@ class PluginConfig():
         except KeyError:
             raise AttributeError(key)
 
-    def get_boolean(self, key):
+    @staticmethod
+    def get_boolean(key):
         return w.config_string_to_boolean(w.config_get_plugin(key))
 
-    def get_string(self, key):
+    @staticmethod
+    def get_string(key):
         return w.config_get_plugin(key)
 
-    def get_int(self, key):
+    @staticmethod
+    def get_int(key):
         return int(w.config_get_plugin(key))
 
     def is_default(self, key):
@@ -4690,14 +4695,17 @@ class PluginConfig():
     get_slack_timeout = get_int
     get_unfurl_auto_link_display = get_string
 
-    def get_distracting_channels(self, key):
+    @staticmethod
+    def get_distracting_channels(key):
         return [x.strip() for x in w.config_get_plugin(key).split(',') if x]
 
-    def get_server_aliases(self, key):
+    @staticmethod
+    def get_server_aliases(key):
         alias_list = w.config_get_plugin(key)
         return dict(item.split(":") for item in alias_list.split(",") if ':' in item)
 
-    def get_slack_api_token(self, key):
+    @staticmethod
+    def get_slack_api_token(key):
         token = w.config_get_plugin("slack_api_token")
         if token.startswith('${sec.data'):
             return w.string_eval_expression(token, {}, {}, {})
