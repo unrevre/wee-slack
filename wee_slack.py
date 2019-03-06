@@ -787,15 +787,14 @@ def quit_notification_callback(signal, sig_type, data):
 def typing_notification_cb(data, signal, current_buffer):
     msg = w.buffer_get_string(current_buffer, "input")
     if len(msg) > 8 and msg[0] != "/":
-        global typing_timer
         now = time.time()
-        if typing_timer + 4 < now:
+        if TypingTimer.time() + 4 < now:
             channel = EVENTROUTER.weechat_controller.buffers.get(current_buffer)
             if channel and channel.type != "thread":
                 identifier = channel.identifier
                 request = {"type": "typing", "channel": identifier}
                 channel.team.send_to_websocket(request, expect_reply=False)
-                typing_timer = now
+                TypingTimer.set(now)
     return w.WEECHAT_RC_OK
 
 
@@ -4327,21 +4326,58 @@ class InvalidType(Exception):
 ### ~*~ EXCEPTIONS END
 
 
+class DebugBuffer():
+    debug_buffer = None
+    debug_string = None
+
+    @classmethod
+    def debug_info(cls):
+        return cls.debug_buffer, cls.debug_string
+
+    @classmethod
+    def create_debug_buffer(cls):
+        if cls.debug_buffer is not None:
+            w.buffer_set(cls.debug_buffer, "display", "1")
+        else:
+            cls.debug_string = None
+            cls.debug_buffer = w.buffer_new(
+                "slack-debug", "", "", "closed_slack_debug_buffer_cb", "")
+            w.buffer_set(cls.debug_buffer, "notify", "0")
+            w.buffer_set(cls.debug_buffer, "highlight_tags_restrict",
+                         "highlight_force")
+
+    @classmethod
+    def closed_debug_buffer(cls):
+        cls.debug_buffer = None
+
+
+def dbg(message, level=0, main_buffer=False, fout=False):
+    """
+    send debug output to the slack-debug buffer and optionally write to a file.
+    """
+    # TODO: do this smarter
+    # return
+    if level >= config.debug_level:
+        debug_buffer, debug_string = DebugBuffer.debug_info()
+        message = "DEBUG: {}".format(message)
+        if fout:
+            with open('/tmp/debug.log', 'a+') as log_file:
+                log_file.writelines(message + '\n')
+        if main_buffer:
+            # w.prnt("", "---------")
+            w.prnt("", "slack: " + message)
+        elif debug_buffer and (not debug_string or debug_string in message):
+            # w.prnt(debug_buffer, "---------")
+            w.prnt(debug_buffer, message)
+
+
 def closed_slack_debug_buffer_cb(data, buffer):
-    global SLACK_DEBUG
-    SLACK_DEBUG = None
+    DebugBuffer.closed_debug_buffer()
     return w.WEECHAT_RC_OK
 
 
 def create_slack_debug_buffer():
-    global SLACK_DEBUG, DEBUG_STRING
-    if SLACK_DEBUG is not None:
-        w.buffer_set(SLACK_DEBUG, "display", "1")
-    else:
-        DEBUG_STRING = None
-        SLACK_DEBUG = w.buffer_new("slack-debug", "", "", "closed_slack_debug_buffer_cb", "")
-        w.buffer_set(SLACK_DEBUG, "notify", "0")
-        w.buffer_set(SLACK_DEBUG, "highlight_tags_restrict", "highlight_force")
+    DebugBuffer.create_debug_buffer()
 
 
 def load_emoji():
@@ -4439,25 +4475,6 @@ def setup_hooks():
     # w.hook_signal('buffer_opened', "buffer_opened_cb", "")
     # w.hook_signal('window_scrolled', "scrolled_cb", "")
     # w.hook_timer(3000, 0, 0, "slack_connection_persistence_cb", "")
-
-def dbg(message, level=0, main_buffer=False, fout=False):
-    """
-    send debug output to the slack-debug buffer and optionally write to a file.
-    """
-    # TODO: do this smarter
-    # return
-    if level >= config.debug_level:
-        global DEBUG_STRING
-        message = "DEBUG: {}".format(message)
-        if fout:
-            with open('/tmp/debug.log', 'a+') as log_file:
-                log_file.writelines(message + '\n')
-        if main_buffer:
-            # w.prnt("", "---------")
-            w.prnt("", "slack: " + message)
-        elif slack_debug and (not debug_string or debug_string in message):
-            # w.prnt(slack_debug, "---------")
-            w.prnt(slack_debug, message)
 
 ### ~*~ CONFIG ~*~
 
@@ -4713,19 +4730,49 @@ class PluginConfig():
 
 ### ~*~ CONFIG END
 
+### ~*~ TYPING ~*~
+
+
+class TypingTimer():
+    ref = None
+
+    @classmethod
+    def set(cls, now):
+        cls.ref = now
+
+    @classmethod
+    def time(cls):
+        return cls.ref
+
+### ~*~ TYPING END
+
 ### ~*~ TRACE ~*~
+
+
+class Tracer():
+    ftrace = None
+
+    @classmethod
+    def open(cls, name, flags):
+        cls.ftrace = open(name, flags)
+
+    @classmethod
+    def flush(cls):
+        cls.ftrace.flush()
+
+    @classmethod
+    def handle(cls):
+        return cls.ftrace
 
 
 # to trace execution, add `setup_trace()` to startup
 # and `sys.settrace(trace_calls)` to a function
 def setup_trace():
-    global ftr
     now = time.time()
-    ftr = open('{}/{}-trace.json'.format(RECORD_DIR, now), 'w')
+    Tracer.open('{}/{}-trace.json'.format(RECORD_DIR, now), 'w')
 
 
 def trace_calls(frame, event, arg):
-    global ftr
     if event != 'call':
         return
     co = frame.f_code
@@ -4740,8 +4787,8 @@ def trace_calls(frame, event, arg):
     caller_filename = caller.f_code.co_filename
     print('Call to {} on line {} of {} from line {} of {}'.format(
         func_name, func_line_no, func_filename,
-        caller_line_no, caller_filename), file=ftr)
-    ftr.flush()
+        caller_line_no, caller_filename), file=Tracer.handle())
+    Tracer.flush()
     return
 
 ### ~*~ TRACE END
@@ -4764,13 +4811,12 @@ if __name__ == "__main__":
         EVENTROUTER = EventRouter()
         # setup_trace()
 
-        # global variables
-        SLACK_DEBUG = None
-        DEBUG_STRING = None
+        debug = DebugBuffer()
         config = PluginConfig()
         config_changed_cb = config.config_changed
 
-        typing_timer = time.time()
+        typing_timer = TypingTimer()
+        typing_timer.set(time.time())
 
         w.hook_config("plugins.var.python." + SCRIPT_NAME + ".*",
                       "config_changed_cb", "")
