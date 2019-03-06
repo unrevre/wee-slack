@@ -1879,7 +1879,7 @@ class SlackDMChannel(SlackChannel):
     def __init__(self, eventrouter, users, **kwargs):
         dmuser = kwargs["user"]
         kwargs["name"] = users[dmuser].name if dmuser in users else dmuser
-        super(SlackDMChannel, self).__init__(eventrouter, **kwargs)
+        super().__init__(eventrouter, **kwargs)
         self.type = 'im'
         self.update_color()
         self.set_name(self.slack_name)
@@ -1887,7 +1887,7 @@ class SlackDMChannel(SlackChannel):
             self.set_topic(create_user_status_string(users[dmuser].profile))
 
     def set_related_server(self, team):
-        super(SlackDMChannel, self).set_related_server(team)
+        super().set_related_server(team)
         if self.user not in self.team.users:
             s = SlackRequest(self.team.token, 'users.info', {'user': self.slack_name}, team_hash=self.team.team_hash, channel_identifier=self.identifier)
             self.eventrouter.receive(s)
@@ -1900,7 +1900,7 @@ class SlackDMChannel(SlackChannel):
 
     def create_buffer(self):
         if not self.channel_buffer:
-            super(SlackDMChannel, self).create_buffer()
+            super().create_buffer()
             w.buffer_set(self.channel_buffer, "localvar_set_type", 'private')
 
     def update_color(self):
@@ -1958,7 +1958,7 @@ class SlackGroupChannel(SlackChannel):
     """
 
     def __init__(self, eventrouter, **kwargs):
-        super(SlackGroupChannel, self).__init__(eventrouter, **kwargs)
+        super().__init__(eventrouter, **kwargs)
         self.type = "group"
         self.set_name(self.slack_name)
 
@@ -1994,7 +1994,7 @@ class SlackMPDMChannel(SlackChannel):
                 for user_id in kwargs["members"]
                 if user_id != myidentifier
         ))
-        super(SlackMPDMChannel, self).__init__(eventrouter, **kwargs)
+        super().__init__(eventrouter, **kwargs)
         self.type = "mpim"
 
     def open(self, update_remote=True):
@@ -2031,11 +2031,11 @@ class SlackMPDMChannel(SlackChannel):
 
 class SlackSharedChannel(SlackChannel):
     def __init__(self, eventrouter, **kwargs):
-        super(SlackSharedChannel, self).__init__(eventrouter, **kwargs)
+        super().__init__(eventrouter, **kwargs)
         self.type = 'shared'
 
     def set_related_server(self, team):
-        super(SlackSharedChannel, self).set_related_server(team)
+        super().set_related_server(team)
         # Fetch members here (after the team is known) since they aren't
         # included in rtm.start
         s = SlackRequest(team.token, 'conversations.members', {'channel': self.identifier}, team_hash=team.team_hash, channel_identifier=self.identifier)
@@ -2046,7 +2046,7 @@ class SlackSharedChannel(SlackChannel):
         for user in self.members - set(self.team.users.keys()):
             s = SlackRequest(self.team.token, 'users.info', {'user': user}, team_hash=self.team.team_hash, channel_identifier=self.identifier)
             self.eventrouter.receive(s)
-        super(SlackSharedChannel, self).get_history(slow_queue)
+        super().get_history(slow_queue)
 
     def set_name(self, slack_name):
         self.name = config.shared_name_prefix + slack_name
@@ -2259,7 +2259,7 @@ class SlackBot(SlackUser):
     needs
     """
     def __init__(self, originating_team_id, **kwargs):
-        super(SlackBot, self).__init__(originating_team_id, is_bot=True, **kwargs)
+        super().__init__(originating_team_id, is_bot=True, **kwargs)
 
 
 class SlackMessage():
@@ -2418,7 +2418,7 @@ class SlackMessage():
 class SlackThreadMessage(SlackMessage):
 
     def __init__(self, parent_message, *args):
-        super(SlackThreadMessage, self).__init__(*args)
+        super().__init__(*args)
         self.parent_message = parent_message
 
 
