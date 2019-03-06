@@ -1043,10 +1043,10 @@ class SlackRequest():
         self.request = request
         self.request_normalized = re.sub(r'\W+', '', request)
         self.token = token
-        post_data["token"] = token
-        self.post_data = post_data
+        self.post_data = post_data if post_data is not None else {}
+        self.post_data["token"] = token
         self.params = {'useragent': 'wee_slack {}'.format(SCRIPT_VERSION)}
-        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urllib.parse.urlencode(post_data))
+        self.url = 'https://{}/api/{}?{}'.format(self.domain, request, urllib.parse.urlencode(self.post_data))
         self.response_id = sha1_hex("{}{}".format(self.url, self.start_time))
         self.retries = kwargs.get('retries', 3)
 #    def __repr__(self):
@@ -1208,7 +1208,7 @@ class SlackTeam():
         tag_name = "team_message" if message else "team_info"
         w.prnt_date_tags(self.channel_buffer, SlackTS().major, tag(tag_name), data)
 
-    def send_message(self, message, subtype=None, request_dict_ext={}):
+    def send_message(self, message, subtype=None, request_dict_ext=None):
         w.prnt("", "ERROR: Sending a message in the team buffer is not supported")
 
     def find_channel_by_members(self, members, channel_type=None):
@@ -1687,7 +1687,7 @@ class SlackChannel(SlackChannelCommon):
             except:
                 dbg("Problem processing buffer_prnt")
 
-    def send_message(self, message, subtype=None, request_dict_ext={}):
+    def send_message(self, message, subtype=None, request_dict_ext=None):
         message = linkify_text(message, self.team)
         dbg(message)
         if subtype == 'me_message':
@@ -1699,7 +1699,8 @@ class SlackChannel(SlackChannelCommon):
         else:
             request = {"type": "message", "channel": self.identifier,
                     "text": message, "user": self.team.myidentifier}
-            request.update(request_dict_ext)
+            if request_dict_ext is not None:
+                request.update(request_dict_ext)
             self.team.send_to_websocket(request)
 
     def store_message(self, message, team, from_me=False):
