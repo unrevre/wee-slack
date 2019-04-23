@@ -1845,6 +1845,17 @@ class SlackChannel(SlackChannelCommon):
             if not external:
                 external = w.nicklist_add_group(self.channel_buffer, '', NICK_GROUP_EXTERNAL, 'weechat.color.nicklist_group', 2)
 
+        def add_nick(self, user):
+            if user.is_external:
+                nick_group = external
+            elif self.team.is_user_present(user.identifier):
+                nick_group = here
+            else:
+                nick_group = afk
+
+            if user.identifier in self.members:
+                w.nicklist_add_nick(self.channel_buffer, nick_group, user.name, user.color_name, "", "", 1)
+
         if len(self.members) > 999:
             w.nicklist_remove_all(self.channel_buffer)
             for fn in ["1| too", "2| many", "3| users", "4| to", "5| show"]:
@@ -1858,14 +1869,7 @@ class SlackChannel(SlackChannelCommon):
             # since this is a change just remove it regardless of where it is
             w.nicklist_remove_nick(self.channel_buffer, nick)
             # now add it back in to whichever..
-            nick_group = afk
-            if user.is_external:
-                nick_group = external
-            elif self.team.is_user_present(user.identifier):
-                nick_group = here
-            if user.identifier in self.members:
-                w.nicklist_add_nick(self.channel_buffer, nick_group, user.name, user.color_name, "", "", 1)
-
+            add_nick(self, user)
         # if we didn't get a user, build a complete list. this is expensive.
         else:
             try:
@@ -1873,12 +1877,7 @@ class SlackChannel(SlackChannelCommon):
                     user = self.team.users.get(member)
                     if user.deleted:
                         continue
-                    nick_group = afk
-                    if user.is_external:
-                        nick_group = external
-                    elif self.team.is_user_present(user.identifier):
-                        nick_group = here
-                    w.nicklist_add_nick(self.channel_buffer, nick_group, user.name, user.color_name, "", "", 1)
+                    add_nick(self, user)
             except:
                 dbg("DEBUG: {} {} {}".format(self.identifier, self.name, format_exc_only()))
 
